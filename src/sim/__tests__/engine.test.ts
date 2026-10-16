@@ -4,7 +4,7 @@ import type { ActuatorCommand, MapId, Realism, SensorFrame, SimConfig, VehicleDe
 import { createSimEngine, RapierSimEngine } from '../engine';
 import { pointAt, projectOnPath } from '../maps/geometry';
 import { qRotate, v3 } from '../math';
-import { SAMPLE_DESIGN, SampleBalanceController } from '../sampleDesign';
+import { SAMPLE_DESIGN, SAMPLE_GAINS, SampleBalanceController } from '../sampleDesign';
 
 beforeAll(async () => {
   await RAPIER.init();
@@ -94,10 +94,9 @@ describe('SimEngine — cơ bản', () => {
 });
 
 describe('SimEngine — xe mẫu với PID mẫu', () => {
-  it.each([
-    ['medium', 1],
-    ['high', 2],
-  ] as [Realism, number][])('giữ thăng bằng ≥ 30 s trên balance_flat có đẩy (realism %s, seed %i)', async (realism, seed) => {
+  const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+  it.each((['medium', 'high'] as Realism[]).flatMap((r) => SEEDS.map((s) => [r, s] as [Realism, number])))(
+    'giữ thăng bằng ≥ 30 s trên balance_flat có đẩy (realism %s, seed %i)', async (realism, seed) => {
     const r = await runSample('balance_flat', 0, { maxTimeS: 32, disturbances: true, realism, seed });
     expect(r.reason).toBe('completed');
     expect(r.balancedS).toBeGreaterThanOrEqual(30);
@@ -107,7 +106,7 @@ describe('SimEngine — xe mẫu với PID mẫu', () => {
   });
 
   it('thiếu phản hồi tốc độ bánh đà thì bánh đà bão hoà và xe đổ', async () => {
-    const c = new SampleBalanceController({ kp: 0.3, kd: 0.025, kw: 0, ki: 0 });
+    const c = new SampleBalanceController({ ...SAMPLE_GAINS, kw: 0 });
     const e = await runWith(cfg({ maxTimeS: 30, disturbances: true, realism: 'high' }), (f, eng) => c.update(f, eng.controlPeriod));
     expect(e.result()!.reason).toBe('fell');
     e.dispose();
@@ -154,7 +153,8 @@ describe('SimEngine — xe mẫu với PID mẫu', () => {
       const tgt = pointAt(eng.map.path, projectOnPath(eng.map.path, x, z).s + 0.25).position;
       let a = Math.atan2(tgt[2] - z, tgt[0] - x) - Math.atan2(fw.z, fw.x);
       a = Math.atan2(Math.sin(a), Math.cos(a));
-      const steer = (Math.atan((2 * 0.16 * Math.sin(a)) / 0.25) * 180) / Math.PI;
+      // a > 0: mục tiêu lệch về +z (phải); servo dương = lái trái
+      const steer = -(Math.atan((2 * 0.16 * Math.sin(a)) / 0.25) * 180) / Math.PI;
       // vào cua phải nghiêng vào trong: tan(φ) = v·ω/g
       c.rollTarget = (Math.atan((s.speed * (-f.imu!.gyro[1] * Math.PI) / 180) / 9.81) * 180) / Math.PI;
       return { ...c.update(f, eng.controlPeriod), lai: steer };
@@ -174,7 +174,7 @@ describe('SimEngine — cảm biến', () => {
       ...SAMPLE_DESIGN.parts,
       { uid: 'tof', itemId: 'vl53l1x', name: 'laserTruoc', position: [0.11, 0.06, 0], rotationDeg: [0, 0, 0] },
       { uid: 'us', itemId: 'hcsr04', name: 'sieuAm', position: [0.11, 0.09, 0], rotationDeg: [0, 0, 0] },
-      { uid: 'ir', itemId: 'sharp_gp2y0a21', name: 'irTrai', position: [0, 0.06, 0.03], rotationDeg: [0, -90, 0] },
+      { uid: 'ir', itemId: 'sharp_gp2y0a21', name: 'irPhai', position: [0, 0.06, 0.03], rotationDeg: [0, -90, 0] },
       { uid: 'line', itemId: 'tcrt5000', name: 'doVach', position: [0, 0.02, 0], rotationDeg: [0, 0, -90] },
       { uid: 'lidar', itemId: 'lidar_ld06', name: 'lidar', position: [-0.05, 0.13, 0], rotationDeg: [0, 0, 0] },
     ],
@@ -194,9 +194,9 @@ describe('SimEngine — cảm biến', () => {
     expect(f.values.laserTruoc as number).toBeLessThan(132);
     expect(f.values.sieuAm as number).toBeGreaterThan(110);
     expect(f.values.sieuAm as number).toBeLessThan(132);
-    // IR hướng sang +z (y = −90° quay x → +z): vách trong cách tâm 25 cm, cảm biến lệch 3 cm
-    expect(f.values.irTrai as number).toBeGreaterThan(18);
-    expect(f.values.irTrai as number).toBeLessThan(26);
+    // IR hướng sang phải +z (y = −90° quay x → +z): vách trong cách tâm 25 cm, cảm biến lệch 3 cm
+    expect(f.values.irPhai as number).toBeGreaterThan(18);
+    expect(f.values.irPhai as number).toBeLessThan(26);
     const scan = f.values.lidar as number[];
     expect(scan).toHaveLength(360);
     expect(scan[90]).toBeGreaterThan(22);

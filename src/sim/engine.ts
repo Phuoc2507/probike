@@ -46,7 +46,8 @@ export const PHYSICS = {
   contactCheckEvery: 4,
 } as const;
 
-const PUSH_FACTOR = { low: 0.7, medium: 1, high: 1.3 } as const;
+/** Hệ số biên độ đẩy theo độ thực tế (high: trần 0,07 × 1,2 = 0,084 N·s). */
+const PUSH_FACTOR = { low: 0.7, medium: 1, high: 1.2 } as const;
 
 // Nhóm va chạm: map (bit 0) va với tất cả; xe (bit 1) chỉ va với map; tia đo chỉ trúng map.
 const GROUP_MAP = (0x0001 << 16) | 0xffff;
@@ -368,7 +369,7 @@ export class RapierSimEngine implements SimEngine {
   // ------------------------------------------------------------------ chạy
 
   step(cmd: ActuatorCommand): void {
-    if (this.disposed) return;
+    this.assertAlive();
     this.applyCommand(this.ended ? {} : cmd, !!this.ended);
     this.controlCount++;
     const target = Math.round((this.controlCount * this.controlPeriod) / PHYSICS_DT);
@@ -426,7 +427,12 @@ export class RapierSimEngine implements SimEngine {
       // bão hoà: không vượt quá tốc độ không tải
       const relMax = r.w0 * 1.05;
       const rel = r.spinAbs - sBody;
-      if (Math.abs(rel) > relMax) r.spinAbs = sBody + Math.sign(rel) * relMax;
+      if (Math.abs(rel) > relMax) {
+        const clamped = sBody + Math.sign(rel) * relMax;
+        // động lượng bánh đà mất đi khi kẹp được trả lại thân (bảo toàn động lượng)
+        chassis.applyTorqueImpulse(toR(scale(a, I * (r.spinAbs - clamped))), true);
+        r.spinAbs = clamped;
+      }
       r.angle += r.spinRel * dt;
     }
 
@@ -434,8 +440,8 @@ export class RapierSimEngine implements SimEngine {
     if (this.steerJoint && this.vehicle.steering) {
       const maxStep = this.vehicle.steering.slewDegPerS * dt;
       this.steerAngle += clampAbs(this.steerTarget - this.steerAngle, maxStep);
-      // quay dương quanh +y đưa mũi bánh về −z; lệnh servo dương = lái về +z ("trái")
-      this.steerJoint.configureMotorPosition(-this.steerAngle * DEG, PHYSICS.servoStiffness, PHYSICS.servoDamping);
+      // quay dương quanh +y đưa mũi bánh về −z: lệnh servo dương = lái TRÁI (cùng dấu yaw)
+      this.steerJoint.configureMotorPosition(this.steerAngle * DEG, PHYSICS.servoStiffness, PHYSICS.servoDamping);
     }
 
     // ---- nhiễu đẩy
@@ -553,6 +559,7 @@ export class RapierSimEngine implements SimEngine {
   // ------------------------------------------------------------------ đọc
 
   sensors(): SensorFrame {
+    this.assertAlive();
     const values: Record<string, SensorValue> = {};
     let imu: ImuReading | null = null;
     for (const ch of this.channels) {
@@ -566,6 +573,7 @@ export class RapierSimEngine implements SimEngine {
   }
 
   snapshot(): SimSnapshot {
+    this.assertAlive();
     const rot = fromRQ(this.chassis.rotation());
     const pos = fromR(this.chassis.translation());
     const parts: BodyPose[] = this.wheels.map((w) => ({
@@ -599,6 +607,7 @@ export class RapierSimEngine implements SimEngine {
   }
 
   push(impulse: number): void {
+    this.assertAlive();
     if (!Number.isFinite(impulse) || impulse === 0) return;
     const rot = fromRQ(this.chassis.rotation());
     const lat = qRotate(rot, v3(0, 0, 1));
@@ -613,6 +622,11 @@ export class RapierSimEngine implements SimEngine {
   }
 
   /** Tốc độ bánh đà (vòng/giây) theo tên động cơ — tiện cho biểu đồ/giao diện. */
+  private assertAlive(): void {
+    if (this.disposed) throw new Error('Mô phỏng đã được giải phóng (dispose) — hãy tạo engine mới.');
+    if (!this.world) throw new Error('Mô phỏng chưa được khởi tạo — hãy gọi init() trước.');
+  }
+
   flywheelRps(name: string): number {
     const r = this.reactions.find((x) => x.model.name === name);
     return r ? -r.spinRel / (2 * Math.PI) : 0;

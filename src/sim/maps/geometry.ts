@@ -7,7 +7,7 @@ import { BALANCE_FLAT, CHECKPOINT_NAMES, COURSE, MAP_NAMES, SEGMENTS } from './s
 
 export type SegmentRole = 'lead' | 'start' | 'u_turn' | 'seesaw' | 'rocks' | 'finish' | 'runout';
 
-/** Một đoạn của đường tâm. heading = góc hướng đi (rad), 0 = +x, dương quay về +z. */
+/** Một đoạn của đường tâm. heading = góc hướng đi (rad), 0 = +x, dương quay về +z (phải). */
 export interface PathSegment {
   role: SegmentRole;
   kind: 'straight' | 'arc';
@@ -16,7 +16,7 @@ export interface PathSegment {
   start: Vec3;         // điểm đầu trên đường tâm (y = 0)
   heading: number;     // hướng tại đầu đoạn
   radius?: number;     // arc
-  turn?: 1 | -1;       // arc: +1 quay về phía +z
+  turn?: 1 | -1;       // arc: +1 rẽ phải (về +z), −1 rẽ trái (về −z)
   center?: Vec3;       // arc
   walls: boolean;
   checkpoint?: string; // checkpoint ở cuối đoạn
@@ -100,13 +100,13 @@ const MAP_SEGMENTS: Record<Exclude<MapId, 'balance_flat'>, SegDef[]> = {
   ],
   u_turn: [
     { role: 'lead', length: S.leadIn },
-    { role: 'u_turn', arc: { radius: S.uTurn.radius, angleDeg: S.uTurn.angleDeg, turn: 1 }, checkpoint: 'cua_u' },
+    { role: 'u_turn', arc: { radius: S.uTurn.radius, angleDeg: S.uTurn.angleDeg, turn: -1 }, checkpoint: 'cua_u' },
     { role: 'lead', length: S.leadOut },
     { role: 'runout', length: S.runout },
   ],
   seesaw: [
     { role: 'lead', length: S.leadIn },
-    { role: 'seesaw', length: S.seesaw.length, checkpoint: 'cau_bap_benh' },
+    { role: 'seesaw', length: S.seesaw.length, checkpoint: 'cau_bap_benh', walls: false },
     { role: 'lead', length: S.leadOut },
     { role: 'runout', length: S.runout },
   ],
@@ -118,8 +118,8 @@ const MAP_SEGMENTS: Record<Exclude<MapId, 'balance_flat'>, SegDef[]> = {
   ],
   full_course: [
     { role: 'start', length: S.start.length, checkpoint: 'xuat_phat' },
-    { role: 'u_turn', arc: { radius: S.uTurn.radius, angleDeg: S.uTurn.angleDeg, turn: 1 }, checkpoint: 'cua_u' },
-    { role: 'seesaw', length: S.seesaw.length, checkpoint: 'cau_bap_benh' },
+    { role: 'u_turn', arc: { radius: S.uTurn.radius, angleDeg: S.uTurn.angleDeg, turn: -1 }, checkpoint: 'cua_u' },
+    { role: 'seesaw', length: S.seesaw.length, checkpoint: 'cau_bap_benh', walls: false },
     { role: 'rocks', length: S.rocks.length, checkpoint: 'bai_da' },
     { role: 'finish', length: S.finish.length, checkpoint: 'dich' },
     { role: 'runout', length: S.runout },
@@ -129,8 +129,8 @@ const MAP_SEGMENTS: Record<Exclude<MapId, 'balance_flat'>, SegDef[]> = {
 // ---------------------------------------------------------------- Đường tâm
 
 const dirOf = (h: number) => v3(Math.cos(h), 0, Math.sin(h));
-/** Pháp tuyến ngang phía +z ("trái") của hướng h. */
-const leftOf = (h: number) => v3(-Math.sin(h), 0, Math.cos(h));
+/** Pháp tuyến ngang phía +z (phải) của hướng h. */
+const rightOf = (h: number) => v3(-Math.sin(h), 0, Math.cos(h));
 
 function layoutPath(defs: SegDef[]): PathSegment[] {
   const out: PathSegment[] = [];
@@ -140,7 +140,7 @@ function layoutPath(defs: SegDef[]): PathSegment[] {
   for (const d of defs) {
     if (d.arc) {
       const { radius, angleDeg, turn } = d.arc;
-      const n = leftOf(h);
+      const n = rightOf(h);
       const c = v3(p.x + turn * radius * n.x, 0, p.z + turn * radius * n.z);
       const len = radius * angleDeg * DEG;
       out.push({
@@ -149,7 +149,7 @@ function layoutPath(defs: SegDef[]): PathSegment[] {
       });
       const h2 = h + turn * angleDeg * DEG;
       // điểm cuối: c - turn·R·left(h2)
-      const n2 = leftOf(h2);
+      const n2 = rightOf(h2);
       p = v3(c.x - turn * radius * n2.x, 0, c.z - turn * radius * n2.z);
       h = h2;
       s += len;
@@ -181,14 +181,14 @@ export function pointAt(path: PathSegment[], s: number): { position: Vec3; headi
   const turn = seg.turn ?? 1;
   const R = seg.radius ?? 1;
   const h = seg.heading + (turn * u) / R;
-  const n = leftOf(h);
+  const n = rightOf(h);
   const c = seg.center ?? [0, 0, 0];
   return { position: [c[0] - turn * R * n.x, 0, c[2] - turn * R * n.z], heading: h };
 }
 
 export interface PathProjection {
   s: number;        // độ dài cung (có thể < 0 hoặc > tổng nếu ra ngoài hai đầu)
-  lateral: number;  // lệch ngang, dương về phía +z của hướng đi
+  lateral: number;  // lệch ngang, dương về bên PHẢI hướng đi
   index: number;    // đoạn gần nhất
   role: SegmentRole;
 }
@@ -210,7 +210,7 @@ export function projectOnPath(path: PathSegment[], x: number, z: number): PathPr
     let d2: number;
     if (g.kind === 'straight') {
       const f = dirOf(g.heading);
-      const n = leftOf(g.heading);
+      const n = rightOf(g.heading);
       const dx = x - g.start[0];
       const dz = z - g.start[2];
       u = dx * f.x + dz * f.z;
@@ -265,7 +265,7 @@ function wallsFor(seg: PathSegment): BoxGeom[] {
   const out: BoxGeom[] = [];
   if (seg.kind === 'straight') {
     const f = dirOf(seg.heading);
-    const n = leftOf(seg.heading);
+    const n = rightOf(seg.heading);
     const mid = { x: seg.start[0] + (f.x * seg.length) / 2, z: seg.start[2] + (f.z * seg.length) / 2 };
     for (const side of [1, -1]) {
       out.push(boxAlong({ x: mid.x + side * off * n.x, z: mid.z + side * off * n.z }, seg.heading, H / 2,
@@ -283,7 +283,7 @@ function wallsFor(seg: PathSegment): BoxGeom[] {
     const r = R - turn * side * off;
     for (let k = 0; k < N; k++) {
       const hMid = seg.heading + (turn * (k + 0.5) * A) / N;
-      const n = leftOf(hMid);
+      const n = rightOf(hMid);
       const p = { x: c[0] - turn * r * n.x, z: c[2] - turn * r * n.z };
       const len = 2 * r * Math.sin(A / N / 2) + T;
       out.push(boxAlong(p, hMid, H / 2, [len, H, T]));
@@ -312,7 +312,7 @@ function makeRocks(seg: PathSegment, seed: number): RockGeom[] {
   const usable = COURSE.laneWidth - 2 * R.wallMargin;
   const count = Math.round(R.densityPerM2 * seg.length * usable);
   const f = dirOf(seg.heading);
-  const n = leftOf(seg.heading);
+  const n = rightOf(seg.heading);
   const rocks: RockGeom[] = [];
   for (let i = 0; i < count; i++) {
     const a = rng.range(R.minRadius, R.maxRadius);
@@ -362,15 +362,22 @@ function computeBounds(boxes: BoxGeom[]): { min: Vec3; max: Vec3 } {
   return { min, max };
 }
 
+/** Bộ nhớ đệm LRU nhỏ: mỗi seed của bãi đá là một mục. */
+const CACHE_MAX = 8;
 const cache = new Map<string, MapGeometry>();
 
 /** Hình học đầy đủ của một map. Cùng (mapId, seed) luôn cho cùng kết quả. */
 export function buildMapGeometry(mapId: MapId, seed = 1): MapGeometry {
   const key = `${mapId}:${mapId === 'rocks' || mapId === 'full_course' ? seed : 0}`;
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit); // đưa lên mới nhất
+    return hit;
+  }
   const g = mapId === 'balance_flat' ? buildBalanceFlat() : buildCourse(mapId, seed);
   cache.set(key, g);
+  while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value as string);
   return g;
 }
 

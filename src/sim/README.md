@@ -44,12 +44,16 @@ sim.dispose();
 
 ## Quy ước dấu (quan trọng)
 
-- Toạ độ như hợp đồng: x tiến, y lên, z ngang; mô phỏng dùng toán **tay phải** của Rapier (xem đề xuất ở cuối).
-- `imu.roll` dương = nóc xe nghiêng về **+z** ("trái" theo hợp đồng). `gyro = [ωx, ωy, ωz]` (độ/s quanh trục thân, tay phải) nên `gyroX` cùng dấu với tốc độ đổi roll.
-- `pitch` dương = đầu xe ngóc lên. `yaw` = góc quay quanh +y (tay phải): dương khi mũi xe quay từ +x về **−z**.
+- Hệ toạ độ **tay phải** như hợp đồng: x tiến, y lên, **z sang phải** (khớp Rapier và three.js, không cần lật khi vẽ).
+- `imu.roll` dương = nghiêng **phải** (đầu y quay về +z). `gyro = [ωx, ωy, ωz]` (độ/s quanh trục thân, tay phải) nên `gyroX` cùng dấu với tốc độ đổi roll.
+- `pitch` dương = đầu xe ngóc lên. `yaw` dương = rẽ **trái** (mũi x quay về −z); `gyroY` cùng dấu.
 - Lệnh bánh đà dương → thân bị đẩy về phía roll dương. Vì vậy PID kiểu `u = pid.update(0 − roll)` (PLAN mục 7) ổn định khi lắp mặc định. Lắp động cơ/đĩa quay 180° quanh y thì đảo chiều.
-- Lệnh động cơ kéo dương → xe tiến. Servo lái dương (độ) → bánh trước lái về **+z**; giới hạn ±40°, tốc độ quay = noLoadRpm × 6 độ/s.
-- `push(J)`: xung lực J (N·s) ngang, vuông góc thân xe, đặt tại trọng tâm; J > 0 đẩy về +z. Gợi ý nút "Đẩy" trong giao diện: ±0,05 N·s.
+- Lệnh động cơ kéo dương → xe tiến. Servo lái dương (độ) → lái **trái** (cùng dấu yaw); giới hạn ±40°, tốc độ quay = noLoadRpm × 6 độ/s.
+- `push(J)`: xung lực J (N·s) ngang, vuông góc thân xe, đặt tại trọng tâm; J > 0 đẩy sang phải (+z). Gợi ý nút "Đẩy" trong giao diện: ±0,05 N·s.
+
+### Chu kỳ điều khiển
+
+`step()` chạy vật lý tới mốc `k / loopHz` làm tròn tới bước 1 ms. Khi 1/loopHz không chia hết cho 1 ms (STM32 400 Hz = 2,5 ms) số bước xen kẽ 3/2 nên khoảng thời gian thật giữa hai lần `loop()` dao động ±0,5 ms, trung bình vẫn đúng. Runtime nên tính `dt()` bằng hiệu `SensorFrame.t` của hai khung liên tiếp, không dùng hằng `controlPeriod`.
 
 ## Mô hình vật lý
 
@@ -57,7 +61,7 @@ sim.dispose();
 - **Bánh** `wheel_btc`: vật riêng, collider trụ bo tròn (bán kính bo = nửa bề rộng ⇒ mặt lốp cong), quán tính trục 0,6·m·r², nối khớp quay trục z. Bánh trước có càng lái (khớp quay trục y + motor vị trí của Rapier, mô-men tối đa = stallTorque servo) nếu `frame.steerable` và có servo.
 - **Động cơ kéo**: τ = τkẹt·(u − ω/ω₀), giới hạn ±τkẹt, tác dụng lên bánh và phản lực lên thân. Bánh được chọn theo `attachTo`, nếu không có thì bánh gần nhất.
 - **Bánh đà**: đĩa `flywheel` gắn động cơ `reaction` qua `attachTo` (hoặc gần nhất < 10 cm), quay quanh trục dọc x. Tốc độ bánh đà là trạng thái riêng (tích phân 1 ms); mô-men động cơ cùng công thức trên, phản lực + mô-men con quay (−ω×h) lên thân; bão hoà ở tốc độ không tải (BLDC 24H: 5000 rpm ≈ 83 vòng/s). Không có đĩa ⇒ chỉ có quán tính rotor 2·10⁻⁶ kg·m².
-- Hằng số: g = 9,81; 8 vòng lặp solver; ma sát nền 0,9, bánh 1,0, vách 0,4; cản lăn bánh 0,02; ổ bi bánh đà 10⁻⁶ N·m·s/rad; nghiêng ban đầu ngẫu nhiên ±0,8° theo seed.
+- Hằng số: g = 9,81; 8 vòng lặp solver; ma sát nền 0,9, bánh 1,0, vách 0,4; cản lăn bánh 0,02; ổ bi bánh đà 10⁻⁶ N·m·s/rad; nghiêng ban đầu ngẫu nhiên ±0,8° theo seed. Nhiễu đẩy: 0,03–0,07 N·s mỗi 2–4 s, nhân {thấp 0,7; vừa 1; cao 1,2}. Khi bánh đà chạm trần tốc độ, phần động lượng bị kẹp được trả lại thân (bảo toàn động lượng).
 
 ## Cảm biến
 
@@ -71,12 +75,13 @@ Mỗi cảm biến lấy mẫu đúng `rateHz`, giá trị ra sau `latencyMs`, n
 | ToF laser | cm | 1 tia; nhiễu tăng theo khoảng cách; ngoài tầm = maxRange |
 | IR Sharp | cm | Đường cong điện áp V(d) (đỉnh 7 cm), nhiễu cộng vào điện áp rồi tra ngược ⇒ sai số tăng nhanh theo khoảng cách, vật < 7 cm bị đọc thành xa |
 | IR phản xạ | 0/1 | 1 khi thấy bề mặt trắng (vách, vạch sơn) trong tầm, hoặc nền xám sát ≤ 15% tầm |
-| LiDAR 360 | mảng cm | `samples` tia trong mặt phẳng ngang của cảm biến, phần tử i = góc i·360/samples độ từ phía trước về +z |
+| LiDAR 360 | mảng cm | `samples` tia trong mặt phẳng ngang của cảm biến, phần tử i = góc i·360/samples độ từ phía trước quay sang phải (+z) |
 
 ## Kết thúc & điểm (`scoring.ts`)
 
 - `fell`: |roll| > 45° hoặc thân (không tính bánh) chạm nền/đá/ván cầu.
 - `out_of_bounds`: lệch ngang > mép đường + 8 cm, trượt khỏi cầu (> mép cầu + 2 cm), rơi dưới nền, hoặc xa điểm xuất phát > 1,2 m ở `balance_flat`.
+- Rơi/trượt khỏi cầu bập bênh = **kết thúc lượt** (`out_of_bounds`), không có luật quay lại đầu cầu trong mô phỏng — thể lệ nên ghi thống nhất.
 - `timeout`: hết `maxTimeS` (riêng `balance_flat`: trụ hết giờ = `completed`). `completed`: qua checkpoint cuối đúng thứ tự.
 - `balancedS` = thời gian liên tục dài nhất có |roll| ≤ 20°. Checkpoint `balance_flat`: `giu_10s`, `giu_20s`, `giu_30s`.
 
@@ -90,12 +95,12 @@ Thời gian chuẩn: straight 2,5 s; u_turn 3,5 s; seesaw 3,5 s; rocks 3 s; full
 
 ## Sa hình (`maps/spec.ts`)
 
-Lòng đường 50 cm, vách 15 cm × 1 cm. full_course: xuất phát 1,2 m → cua U (R = 60 cm, quay về +z) → cầu bập bênh 1,0 × 0,25 m (±10°, trục cao 8,7 cm, hai đầu ván vát 4 cm, ván ban đầu tì đầu vào xuống nền) → bãi đá 0,8 m (≈ 40 viên, cao 0,5–1,5 cm, theo seed) → đích 0,8 m → đoạn dư 0,35 m có vách chặn. Hộp bao nằm trong 4,0 × 2,5 m (có test kiểm).
+Lòng đường 50 cm, vách 15 cm × 1 cm. full_course: xuất phát 1,2 m → cua U (R = 60 cm, rẽ **trái**, về −z) → cầu bập bênh 1,0 × 0,25 m (**không có vách** ở đoạn cầu, ±10°, trục cao 8,7 cm, hai đầu ván vát 4 cm, ván ban đầu tì đầu vào xuống nền) → bãi đá 0,8 m (≈ 40 viên, cao 0,5–1,5 cm, theo seed) → đích 0,8 m → đoạn dư 0,35 m có vách chặn. Hộp bao nằm trong 4,0 × 2,5 m (có test kiểm).
 
 Map luyện từng đoạn có đoạn dẫn 0,4 m trước/sau. Xe xuất phát tại s = 0,2 m tính từ vách đầu.
 
 ## Kết quả kiểm chứng (Vitest)
 
-- Xe mẫu + PID mẫu (Kp 0,3; Kd 0,025; Kw 0,03) giữ thăng bằng 32 s trên `balance_flat` có đẩy (realism vừa & cao); bỏ Kw thì bánh đà bão hoà và xe đổ sau vài giây.
+- Xe mẫu + PID mẫu (Kp 0,4; Kd 0,035; Kw 0,07) giữ thăng bằng 32 s trên `balance_flat` có đẩy, test chạy seed 1–8 × realism vừa & cao (đã quét tay seed 1–30: không lượt nào ngã); bỏ Kw thì bánh đà bão hoà và xe đổ sau vài giây.
 - Chạy hết `straight` (≈ 2,3 s ở lệnh 0,5). Có servo lái + bám đường + nghiêng vào cua: qua hết `full_course` ≈ 8 s.
 - 12 s mô phỏng ≈ 0,5 s CPU (Node).

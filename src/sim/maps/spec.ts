@@ -1,5 +1,5 @@
 // NGUỒN SỐ ĐO DUY NHẤT của sa hình (PLAN.md mục 3). Sửa ở đây là mô phỏng, hình 3D và thể lệ cùng đổi.
-// Đơn vị: mét, độ, giây, kg. Hệ toạ độ như hợp đồng: x tiến, y lên, z ngang (+z = "trái").
+// Đơn vị: mét, độ, giây, kg. Hệ toạ độ như hợp đồng: x tiến, y lên, z sang PHẢI (hệ tay phải).
 
 import type { MapId } from '@/shared/types';
 
@@ -22,7 +22,7 @@ export const COURSE = {
 export const SEGMENTS = {
   /** 1. Xuất phát — đoạn thẳng 1,2 m. */
   start: { length: 1.2 },
-  /** 2. Cua chữ U — bán kính tâm đường 60 cm, quay đầu 180° (về phía +z). */
+  /** 2. Cua chữ U — bán kính tâm đường 60 cm, quay đầu 180°, rẽ TRÁI (về phía −z). */
   uTurn: { radius: 0.6, angleDeg: 180 },
   /** 3. Cầu bập bênh — trục xoay giữa cầu, không có vách hai bên cầu. */
   seesaw: {

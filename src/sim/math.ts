@@ -64,7 +64,7 @@ export function qFromEulerDeg(e: Vec3): Q4 {
   return qMul(qMul(qx, qy), qz);
 }
 
-/** Quaternion quay trục x thành hướng ngang có góc `heading` (rad, dương quay về +z). */
+/** Quaternion quay trục x thành hướng ngang có góc `heading` (rad, dương quay về +z = phải). */
 export function qHeading(heading: number): Q4 {
   // Quay quanh +y một góc dương đưa x về -z, nên dùng -heading.
   return qAxisAngle(v3(0, 1, 0), -heading);
@@ -96,8 +96,9 @@ export function qFromBasis(c0: V3, c1: V3, c2: V3): Q4 {
 
 /**
  * Góc Euler của thân xe theo thứ tự yaw (quanh y) → pitch (quanh z) → roll (quanh x), độ.
- * Dấu theo quy tắc bàn tay phải quanh trục của thân: roll dương = nóc xe nghiêng về +z
- * (hợp đồng gọi +z là "trái"), pitch dương = đầu xe ngóc lên, yaw dương = mũi xe quay từ +x về −z.
+ * Hệ tay phải (x tiến, y lên, z sang phải), dấu theo quy tắc bàn tay phải quanh trục của thân:
+ * roll dương = nghiêng PHẢI (đầu y quay về +z), pitch dương = đầu xe ngóc lên,
+ * yaw dương = rẽ TRÁI (mũi x quay về −z).
  */
 export function eulerYZX(q: Q4): { roll: number; pitch: number; yaw: number } {
   const f = qRotate(q, v3(1, 0, 0));

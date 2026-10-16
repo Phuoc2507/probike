@@ -34,7 +34,7 @@ export interface BalanceGains {
   ki: number;
 }
 
-export const SAMPLE_GAINS: BalanceGains = { kp: 0.3, kd: 0.025, kw: 0.03, ki: 0 };
+export const SAMPLE_GAINS: BalanceGains = { kp: 0.4, kd: 0.035, kw: 0.07, ki: 0 };
 
 /**
  * Bộ điều khiển cân bằng mẫu. Quy ước dấu (giống ví dụ PLAN mục 7): lệnh bánh đà dương đẩy thân

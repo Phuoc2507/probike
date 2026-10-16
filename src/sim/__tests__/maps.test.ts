@@ -20,7 +20,7 @@ describe('hình học sa hình', () => {
     expect(d).toBeLessThanOrEqual(COURSE.sizeM[1]);
     // cua U bán kính tâm 60 cm: hai làn cách nhau 1,2 m
     const afterU = pointAt(g.path, g.checkpoints[1].s);
-    expect(afterU.position[2]).toBeCloseTo(2 * SEGMENTS.uTurn.radius, 6);
+    expect(afterU.position[2]).toBeCloseTo(-2 * SEGMENTS.uTurn.radius, 6); // rẽ trái = về −z
     expect(Math.cos(afterU.heading)).toBeCloseTo(-1, 6);
   });
 
@@ -32,6 +32,18 @@ describe('hình học sa hình', () => {
       const pr = projectOnPath(g.path, p.position[0] + 0.1 * n[0], p.position[2] + 0.1 * n[1]);
       expect(pr.s).toBeCloseTo(s, 4);
       expect(pr.lateral).toBeCloseTo(0.1, 4);
+    }
+  });
+
+  it('cầu bập bênh không có vách hai bên', () => {
+    for (const id of ['seesaw', 'full_course'] as const) {
+      const g = buildMapGeometry(id, 1);
+      const seg = g.path.find((p) => p.role === 'seesaw')!;
+      for (const w of g.walls) {
+        const pr = projectOnPath(g.path, w.center[0], w.center[2]);
+        const inside = pr.s > seg.s0 + 0.02 && pr.s < seg.s0 + seg.length - 0.02;
+        expect(inside && Math.abs(pr.lateral) < COURSE.laneWidth).toBe(false);
+      }
     }
   });
 
