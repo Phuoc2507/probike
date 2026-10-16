@@ -138,7 +138,7 @@ export function PartInspector({ design, part, locked, disabled, onRename, onPatc
 
       <fieldset disabled={disabled || locked} className="space-y-1">
         <legend className="mb-1 text-xs font-medium text-ink-soft">
-          Vị trí (cm) — x trước, y lên, z ngang {locked && '· bánh xe tự đặt theo khung'}
+          Vị trí (cm) — x tiến, y lên, z sang phải {locked && '· bánh xe tự đặt theo khung'}
         </legend>
         <div className="grid grid-cols-3 gap-1">
           {[0, 1, 2].map((i) => (

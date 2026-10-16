@@ -52,7 +52,7 @@ export function DesignInfo({ design, check }: { design: VehicleDesign; check: De
       <div className="rounded-md bg-surface-2 px-3 py-2 text-xs">
         <div className="mb-0.5 font-semibold text-ink">Trọng tâm (chấm vàng)</div>
         <div className="text-ink-soft">
-          cao {fmtCm(com[1])} cm · lệch trước/sau {fmtCm(com[0])} cm · lệch ngang {fmtCm(com[2])} cm
+          cao {fmtCm(com[1])} cm · lệch trước/sau {fmtCm(com[0])} cm · lệch ngang {fmtCm(Math.abs(com[2]))} cm {com[2] > 0.0005 ? 'về bên phải' : com[2] < -0.0005 ? 'về bên trái' : ''}
         </div>
         <div className="mt-0.5 text-ink-soft">Mẹo: trọng tâm thấp và nằm giữa thân xe giúp cân bằng dễ hơn.</div>
       </div>

@@ -323,7 +323,7 @@ export function addPart(
   return { design: { ...design, parts: [...design.parts, part] }, uid };
 }
 
-/** Động cơ kéo đặt cạnh bánh, lệch sang trái để không chồng lên bánh. */
+/** Động cơ kéo đặt cạnh bánh, lệch sang phải (+z, hệ tay phải) để không chồng lên bánh. */
 function wheelSideZ(item: CatalogItem): number {
   const wheelHalf = CATALOG_BY_ID[WHEEL_ITEM_ID].size[2] / 2;
   return wheelHalf + item.size[2] / 2 + 0.003;
