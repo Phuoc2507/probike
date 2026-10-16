@@ -13,5 +13,7 @@ export default defineConfig({
     environment: 'node',
     // Chỉ quét test trong src, bỏ qua các worktree ở .claude/worktrees
     include: ['src/**/*.test.{ts,tsx}'],
+    // Test mô phỏng vật lý (30 s mô phỏng) chạy lâu trên máy yếu/đang bận
+    testTimeout: 60_000,
   },
 });
