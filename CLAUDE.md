@@ -2,9 +2,12 @@
 
 Đọc `PLAN.md` trước. Giao diện, nội dung, comment viết **tiếng Việt**; tên biến/hàm tiếng Anh.
 
-## Môi trường (máy không cài sẵn Node/Git)
+## Môi trường
 
-Node.js và Git là bản portable. Mỗi lệnh PowerShell cần thêm vào PATH trước:
+Cần Node.js ≥ 20 và Git trong PATH hệ thống (Claude Desktop cần `git` để tạo worktree). Máy mới: xem `BAN_GIAO.md` mục 1
+(`copy .env.example .env`, `npm install`).
+
+Riêng máy cũ dùng bản portable (MinGit/NodeJS trong LocalAppData): mỗi lệnh PowerShell cần thêm vào PATH trước:
 
 ```powershell
 $env:Path = "$env:LOCALAPPDATA\NodeJS;$env:LOCALAPPDATA\MinGit\cmd;" + $env:Path
