@@ -44,7 +44,7 @@ export function pidTutorial(motorName = DEFAULT_FLYWHEEL_NAME): TutorialStep[] {
       title: 'Bước 1 — Đọc góc nghiêng',
       goal: 'Hiểu xe đang nghiêng bao nhiêu độ và nghiêng nhanh thế nào.',
       body: [
-        'Cảm biến IMU (MPU6050) cho biết góc nghiêng ngang của xe: imu.roll(), đơn vị độ. Xe đứng thẳng là 0°, nghiêng trái là số dương, nghiêng phải là số âm.',
+        'Cảm biến IMU (MPU6050) cho biết góc nghiêng ngang của xe: imu.roll(), đơn vị độ. Xe đứng thẳng là 0°, nghiêng PHẢI là số dương, nghiêng trái là số âm.',
         'imu.gyroX() cho biết tốc độ nghiêng, đơn vị độ/giây. Đây là "đạo hàm" của góc: xe đổ càng nhanh thì số này càng lớn.',
         'Chạy code dưới đây, bấm "Đẩy" và xem hai đường trên biểu đồ. Chưa có điều khiển nên xe sẽ đổ.',
       ],

@@ -37,12 +37,12 @@ export const API_DOCS: ApiDoc[] = [
 ];
 
 export const IMU_METHODS: ApiDoc[] = [
-  { name: 'roll', signature: 'imu.roll()', detail: 'Góc nghiêng ngang, độ — nghiêng trái là dương', kind: 'method' },
-  { name: 'pitch', signature: 'imu.pitch()', detail: 'Góc chúc lên/xuống, độ', kind: 'method' },
-  { name: 'yaw', signature: 'imu.yaw()', detail: 'Góc hướng (quay đầu), độ', kind: 'method' },
+  { name: 'roll', signature: 'imu.roll()', detail: 'Góc nghiêng ngang, độ — nghiêng phải là dương', kind: 'method' },
+  { name: 'pitch', signature: 'imu.pitch()', detail: 'Góc chúc, độ — ngóc đầu lên là dương', kind: 'method' },
+  { name: 'yaw', signature: 'imu.yaw()', detail: 'Góc hướng, độ — rẽ trái là dương', kind: 'method' },
   { name: 'gyroX', signature: 'imu.gyroX()', detail: 'Tốc độ quay quanh trục X (trục dọc xe), độ/giây', kind: 'method' },
   { name: 'gyroY', signature: 'imu.gyroY()', detail: 'Tốc độ quay quanh trục Y (thẳng đứng), độ/giây', kind: 'method' },
-  { name: 'gyroZ', signature: 'imu.gyroZ()', detail: 'Tốc độ quay quanh trục Z (ngang), độ/giây', kind: 'method' },
+  { name: 'gyroZ', signature: 'imu.gyroZ()', detail: 'Tốc độ quay quanh trục Z (ngang, chỉ sang phải), độ/giây', kind: 'method' },
   { name: 'accX', signature: 'imu.accX()', detail: 'Gia tốc theo trục X, m/s²', kind: 'method' },
   { name: 'accY', signature: 'imu.accY()', detail: 'Gia tốc theo trục Y, m/s²', kind: 'method' },
   { name: 'accZ', signature: 'imu.accZ()', detail: 'Gia tốc theo trục Z, m/s²', kind: 'method' },

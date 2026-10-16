@@ -22,7 +22,7 @@ function loop() {
   // Cập nhật hệ số từ thanh trượt (kéo là thấy tác dụng ngay)
   pid.setTunings(param("Kp", ${gains.Kp}), param("Ki", ${gains.Ki}), param("Kd", ${gains.Kd}));
 
-  const goc = imu.roll();                 // độ, nghiêng trái là dương
+  const goc = imu.roll();                 // độ, nghiêng phải là dương
   const u = pid.update(0 - goc, dt());     // đầu ra điều khiển
   motor(${JSON.stringify(motorName)}, u);              // -1..1, tự kẹp nếu vượt
 

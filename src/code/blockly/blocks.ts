@@ -88,7 +88,7 @@ const BLOCKS = [
     }],
     output: 'Number',
     colour: COLOURS.sensor,
-    tooltip: 'Đọc cảm biến IMU (MPU6050). roll: nghiêng trái là dương.',
+    tooltip: 'Đọc cảm biến IMU (MPU6050). roll: nghiêng phải là dương; pitch: ngóc đầu lên là dương; yaw: rẽ trái là dương.',
   },
   {
     type: 'probike_read',

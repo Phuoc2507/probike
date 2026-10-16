@@ -53,6 +53,10 @@ describe('Xuất Arduino C++', () => {
     expect(code).toContain('void loop() {');
     expect(code).toContain('Arduino Nano');
     expect(code).toContain('const unsigned long LOOP_US = 10000;'); // 100 Hz
+    // hệ tay phải: z của xe chỉ sang phải = −trục Y của chip; roll dương = nghiêng phải
+    expect(code).toContain('imu.az = -cy;');
+    expect(code).toContain('imu.gz = -wy;');
+    expect(code).toContain('float accRoll = atan2(-imu.az, imu.ay) * RAD_TO_DEG;');
     // chân cắm: servo giữ chân gán sẵn D10, có chú thích sửa chân
     expect(code).toContain('#define LAI_PIN 10');
     expect(code).toMatch(/#define BANHDA_PWM \d+ .*← sửa cho đúng dây nối thật/);

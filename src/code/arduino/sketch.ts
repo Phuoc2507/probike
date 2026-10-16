@@ -180,8 +180,9 @@ const CPP_PID = `class PID {
 };`;
 
 const CPP_IMU = `// ===== IMU MPU6050 — I2C: SDA=A4, SCL=A5 (Nano/Uno); ESP32: SDA=21, SCL=22 =====
-// Quy ước giống mô phỏng: x tiến về trước, y hướng lên, z sang trái; roll dương = nghiêng trái.
-// Giả định chip gắn nằm ngang, trục X của chip chỉ về phía trước xe, trục Y của chip chỉ sang trái.
+// Quy ước giống mô phỏng (hệ tay phải): x tiến về trước, y hướng lên, z sang PHẢI.
+// roll dương = nghiêng phải, pitch dương = ngóc đầu lên, yaw dương = rẽ trái.
+// Giả định chip gắn nằm ngang, mặt linh kiện hướng lên, trục X của chip chỉ về phía trước xe, trục Y của chip chỉ sang trái.
 // ⚠ Nếu gắn IMU xoay khác, đổi dấu/đổi trục trong imuUpdate().
 #define MPU_ADDR 0x68
 struct Imu {
@@ -233,9 +234,10 @@ void imuUpdate(float dt) {
   // raw: 0..2 gia tốc chip X,Y,Z — 3 nhiệt độ — 4..6 con quay chip X,Y,Z
   float cx = raw[0] / 16384.0 * 9.81, cy = raw[1] / 16384.0 * 9.81, cz = raw[2] / 16384.0 * 9.81;
   float wx = raw[4] / 65.5 - gyroBias[0], wy = raw[5] / 65.5 - gyroBias[1], wz = raw[6] / 65.5 - gyroBias[2];
-  // Đổi sang trục của xe: x = chip X, y = chip Z (lên), z = chip Y (trái)
-  imu.ax = cx; imu.ay = cz; imu.az = cy;
-  imu.gx = wx; imu.gy = wz; imu.gz = wy;
+  // Đổi sang trục của xe: x = chip X, y = chip Z (lên), z = −chip Y (chip Y chỉ trái, z của xe chỉ phải)
+  imu.ax = cx; imu.ay = cz; imu.az = -cy;
+  imu.gx = wx; imu.gy = wz; imu.gz = -wy;
+  // Nghiêng phải θ: trọng lực đo được trong hệ xe ≈ (0, cosθ, −sinθ)·g → roll = atan2(−az, ay)
   float accRoll = atan2(-imu.az, imu.ay) * RAD_TO_DEG;
   float accPitch = atan2(imu.ax, imu.ay) * RAD_TO_DEG;
   // Bộ lọc bù (complementary): tin con quay ngắn hạn, gia tốc kế dài hạn
