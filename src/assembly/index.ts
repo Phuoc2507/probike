@@ -8,7 +8,9 @@ export { FrameModel } from './models/FrameModel';
 export { SensorViz } from './models/SensorViz';
 
 // Kiểm tra luật & thống kê
-export { checkDesign, checkDesignDetailed, computeStats, designBounds, partOBB, fmtCm, fmtKg, fmtVnd } from './rules';
+export {
+  checkDesign, checkDesignDetailed, computeStats, designBounds, frameErrors, normalizePin, partOBB, fmtCm, fmtKg, fmtVnd,
+} from './rules';
 
 // Tạo/sửa thiết kế (hàm thuần, trả thiết kế mới)
 export {

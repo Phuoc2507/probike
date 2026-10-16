@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Copy, Trash } from 'lucide-react';
 import type { CatalogItem, PlacedPart, Vec3, VehicleDesign } from '@/shared/types';
 import { CATALOG_BY_ID } from '@/shared/catalog';
-import { attachCandidates, controllerPins, needsPin, SHARED_PINS, validatePartName } from '../design';
+import { attachCandidates, controllerPins, needsPin, SHARED_PINS, snap, validatePartName } from '../design';
 import { fmtVnd } from '../rules';
 import { CATEGORY_LABEL } from './PartPalette';
 
@@ -149,7 +149,7 @@ export function PartInspector({ design, part, locked, disabled, onRename, onPatc
               step={0.5}
               onCommit={(v) => {
                 const p = [...part.position] as Vec3;
-                p[i] = Math.round(v * 10) / 1000;
+                p[i] = snap(v / 100); // bắt lưới 5 mm như gizmo
                 onPose({ position: p });
               }}
             />

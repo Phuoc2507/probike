@@ -199,6 +199,84 @@ describe('di chuyển có linh kiện con', () => {
   });
 });
 
+describe('dữ liệu không qua giao diện (Yjs/CSDL)', () => {
+  const heavy = () => {
+    let d = base();
+    for (let i = 0; i < 6; i++) d = addPart(d, 'flywheel_steel_100', { position: [-0.1 + i * 0.03, 0.25, 0.03] }).design;
+    return d;
+  };
+  it('chiều cao khung âm không lách được giới hạn 1,5 kg', () => {
+    const d = heavy();
+    const hacked = { ...d, frame: { ...d.frame, height: -2 } };
+    const r = checkDesign(hacked);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => /Chiều cao khung không hợp lệ/.test(e))).toBe(true);
+    expect(r.errors.some((e) => /vượt giới hạn 1,500 kg/.test(e))).toBe(true);
+  });
+  it('wheelbase NaN, ngoài khoảng, hoặc vật liệu lạ là lỗi và số liệu vẫn hữu hạn', () => {
+    const d = base();
+    for (const frame of [
+      { ...d.frame, wheelbase: NaN },
+      { ...d.frame, wheelbase: 0.5 },
+      { ...d.frame, material: 'foo' as never },
+    ]) {
+      const r = checkDesign({ ...d, frame });
+      expect(r.ok).toBe(false);
+      expect(r.errors.some((e) => /Khoảng cách 2 trục bánh không hợp lệ|Vật liệu khung "foo"/.test(e))).toBe(true);
+      expect(Number.isFinite(r.totalMassKg)).toBe(true);
+      expect(Number.isFinite(r.totalCostVnd)).toBe(true);
+      expect(r.centerOfMass.every(Number.isFinite)).toBe(true);
+    }
+  });
+  it('vị trí / góc xoay không phải số là lỗi rõ ràng', () => {
+    const d = base();
+    const imu = partByName(d, 'imu');
+    for (const patch of [{ position: [NaN, 0.1, 0] }, { rotationDeg: [0, Infinity, 0] }, { position: [0, 0.1] }]) {
+      const r = checkDesign(updatePart(d, imu.uid, patch as never));
+      expect(r.errors.some((e) => /"imu" có vị trí hoặc góc xoay không hợp lệ/.test(e))).toBe(true);
+      expect(r.centerOfMass.every(Number.isFinite)).toBe(true);
+    }
+  });
+  it('bánh phải nằm đúng trục bánh của khung', () => {
+    const d = base();
+    const { rear, front } = findWheels(d);
+    const moved = updatePart(updatePart(d, rear!.uid, { position: [-0.14, WHEEL_RADIUS, 0] }), front!.uid, { position: [0.14, WHEEL_RADIUS, 0] });
+    expect(hasError(moved, /không nằm đúng trục bánh của khung/)).toBe(true);
+  });
+  it('đĩa bánh đà phải cùng trục và sát đầu trục động cơ', () => {
+    const d = base();
+    const fw = partByName(d, 'diaBanhDa');
+    const far = updatePart(d, fw.uid, { position: [fw.position[0] + 0.05, fw.position[1], fw.position[2]] });
+    expect(hasError(far, /phải nằm ngay trên trục của động cơ/)).toBe(true);
+    const offAxis = updatePart(d, fw.uid, { position: [fw.position[0], fw.position[1] + 0.01, fw.position[2]] });
+    expect(hasError(offAxis, /phải nằm ngay trên trục của động cơ/)).toBe(true);
+    const tilted = updatePart(d, fw.uid, { rotationDeg: [0, 90, 0] });
+    expect(hasError(tilted, /phải nằm ngay trên trục của động cơ/)).toBe(true);
+    expect(hasError(d, /phải nằm ngay trên trục/)).toBe(false);
+  });
+  it('attachTo không miễn chồng lấn cho cặp sai; gắn vào chính nó / không tồn tại là lỗi', () => {
+    const d = base();
+    const pin = partByName(d, 'pin');
+    const rear = findWheels(d).rear!;
+    const inWheel = updatePart(d, pin.uid, { attachTo: rear.uid, position: rear.position });
+    const r = checkDesign(inWheel);
+    expect(r.errors.some((e) => /"banhSau" và "pin"|"pin" và "banhSau"/.test(e))).toBe(true);
+    expect(r.errors.some((e) => /"pin" không gắn được vào "banhSau"/.test(e))).toBe(true);
+    expect(hasError(updatePart(d, pin.uid, { attachTo: pin.uid }), /"pin" đang gắn vào chính nó/)).toBe(true);
+    expect(hasError(updatePart(d, pin.uid, { attachTo: 'khong_co' }), /"pin" đang gắn vào một linh kiện không tồn tại/)).toBe(true);
+    // động cơ kéo gắn bánh sau nhưng lồng vào bánh thì vẫn bị báo chồng lấn
+    const motor = partByName(d, 'dongCoSau');
+    expect(hasError(updatePart(d, motor.uid, { position: rear.position }), /chồng lên nhau/)).toBe(true);
+  });
+  it('chân cắm được chuẩn hoá trước khi so', () => {
+    const d = base();
+    const drv = partByName(d, 'driver');
+    expect(hasError(updatePart(d, drv.uid, { pin: ' d9 ' }), /Chân D9 đang được dùng/)).toBe(true);
+    const imu = partByName(d, 'imu');
+    expect(checkDesign(updatePart(d, imu.uid, { pin: 'i2c' })).errors).toEqual([]);
+  });
+});
+
 describe('hình học', () => {
   it('ma trận xoay khớp three.js (z 90°: x → y)', () => {
     const m = eulerXYZToMat3([0, 0, 90]);

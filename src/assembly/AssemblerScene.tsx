@@ -6,7 +6,7 @@ import { BoxGeometry, EdgesGeometry, Plane, Raycaster, Vector2, Vector3, type Ob
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { Vec3, VehicleDesign } from '@/shared/types';
 import { VehicleModel } from './VehicleModel';
-import { GRID_STEP, LIMITS, ROTATE_STEP_DEG, round } from './design';
+import { GRID_STEP, LIMITS, ROTATE_STEP_DEG, WHEEL_RADIUS, round } from './design';
 import { designBounds } from './rules';
 
 export type GizmoMode = 'translate' | 'rotate';
@@ -97,6 +97,21 @@ function SceneContent({
     });
   };
 
+  // Gizmo sửa trực tiếp Object3D. Sau khi thả chuột, đặt lại object theo dữ liệu design (nguồn sự thật)
+  // để nếu component cha không nhận onChange (chỉ xem, bị Yjs ghi đè...) thì hình 3D không lệch với props.
+  const designRef = useRef(design);
+  designRef.current = design;
+  const [resync, setResync] = useState(0);
+  useEffect(() => {
+    if (resync === 0 || !selectedUid) return;
+    const part = designRef.current.parts.find((p) => p.uid === selectedUid);
+    const obj = objects.current.get(selectedUid);
+    if (!part || !obj) return;
+    const k = Math.PI / 180;
+    obj.position.set(...part.position);
+    obj.rotation.set(part.rotationDeg[0] * k, part.rotationDeg[1] * k, part.rotationDeg[2] * k);
+  }, [resync, selectedUid, design]);
+
   const showGizmo = !!selectedObj && !!selectedUid && !readOnly && !isLocked(selectedUid);
   return (
     <>
@@ -136,6 +151,7 @@ function SceneContent({
             draggingRef.current = false;
             lastDragEnd.current = performance.now();
             emitMove();
+            setResync((n) => n + 1);
           }}
           onObjectChange={emitMove}
         />
@@ -176,7 +192,7 @@ function DropHelper({ dropRef, design }: { dropRef: MutableRefObject<DropProject
         facing = 'side';
         sign = camera.position.z >= 0 ? 1 : -1;
       } else if (ay >= ax) {
-        const top = 0.034 + design.frame.height;
+        const top = WHEEL_RADIUS + design.frame.height;
         plane = new Plane(new Vector3(0, 1, 0), -top); // mặt trên khung
         facing = 'top';
         sign = 1;

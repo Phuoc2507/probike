@@ -53,6 +53,9 @@ export function FramePanel({
       <p className="text-xs text-ink-soft">
         Khung nặng {Math.round(f.massKg * 1000)} g · giá {fmtVnd(frameCost(f))}. Hai bánh BTC tự đặt đúng trục.
       </p>
+      <p className="text-xs text-ink-soft">
+        Linh kiện được đặt xuyên qua tấm khung (coi như khoét lỗ / bắt vít lên khung) — chỉ tính chồng lấn giữa các linh kiện.
+      </p>
     </div>
   );
 }

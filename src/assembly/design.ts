@@ -44,7 +44,7 @@ export function computeFrameMass(frame: Pick<VehicleFrame, 'wheelbase' | 'height
 }
 
 export function frameCost(frame: VehicleFrame): number {
-  return FRAME_PRICE_VND[frame.material];
+  return FRAME_PRICE_VND[frame.material] ?? 0;
 }
 
 /** Tâm và kích thước hộp bao của tấm khung (dùng tính trọng tâm, kích thước xe). */
