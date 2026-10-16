@@ -150,4 +150,5 @@ báo cáo cuối để session 0 gộp. Mỗi session làm trên nhánh riêng (
 
 ## 10. Nhật ký thay đổi hợp đồng
 
-- (trống)
+- 16/10/2026 — `src/shared/types.ts`: hệ toạ độ đổi từ "z sang trái" (tay trái, sai với Rapier/three.js)
+  thành **hệ tay phải, z sang phải**. Roll dương = nghiêng phải, yaw dương = rẽ trái. Phát hiện khi review sim-core.

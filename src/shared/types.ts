@@ -1,7 +1,9 @@
 // Hợp đồng dùng chung giữa Lắp ráp, Mô phỏng, Lập trình, Cộng tác.
 // Đổi file này phải ghi vào PLAN.md mục 10.
 //
-// Hệ toạ độ: mét, x tiến về trước, y hướng lên, z sang trái.
+// Hệ toạ độ: mét, hệ TAY PHẢI (giống Rapier, three.js): x tiến về trước, y hướng lên, z sang PHẢI.
+// Góc theo quy tắc tay phải: roll (quanh x) dương = nghiêng sang PHẢI (đầu y quay về +z);
+// yaw (quanh y) dương = rẽ TRÁI (mũi x quay về −z).
 // Gốc toạ độ của xe = trung điểm hai điểm tiếp đất của hai bánh khi xe đứng thẳng.
 
 export type Vec3 = [number, number, number];
