@@ -67,3 +67,15 @@ describe('validateRegistration', () => {
     expect(validateRegistration({ ...base, leader: { ...base.leader, password: '1' } })).toMatch(/Mật khẩu/);
   });
 });
+
+describe('validateRegistration khi đã đăng nhập', () => {
+  it('không bắt mật khẩu ở nhánh RPC', () => {
+    const input: RegisterTeamInput = {
+      teamName: 'Đội Gió', school: 'A',
+      leader: { fullName: 'An', email: 'an@x.vn', phone: '', password: '' },
+      members: [],
+    };
+    expect(validateRegistration(input)).toMatch(/Mật khẩu/);
+    expect(validateRegistration(input, { requirePassword: false })).toBeNull();
+  });
+});

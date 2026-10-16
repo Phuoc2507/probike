@@ -31,7 +31,7 @@ function siteUrl(path: string): string {
 
 // ---------------------------------------------------------------- Ánh xạ hàng DB → kiểu dùng chung
 
-interface TeamRow { id: string; name: string; school: string; leader_id: string | null; status: Team['status']; created_at: string; admin_note?: string }
+interface TeamRow { id: string; name: string; school: string; leader_id: string | null; status: Team['status']; created_at: string }
 interface MemberRow { id: string; team_id: string; user_id: string | null; full_name: string; email: string; phone: string; role_in_team: string }
 interface ProgressRow { team_id: string; stage_reached: number; balance_best_s: number; best_score: number; updated_at: string }
 
@@ -61,26 +61,28 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 // ---------------------------------------------------------------- Hợp đồng gốc
 
 export async function registerTeam(input: RegisterTeamInput): Promise<Result<{ teamId: string; needsEmailConfirm?: boolean }>> {
-  const invalid = validateRegistration(input);
+  const leaderEmail = normEmail(input.leader.email);
+  const { data: s } = await supabase.auth.getSession();
+  // Đã đăng nhập bằng đúng email trưởng nhóm → đăng ký qua RPC, không cần mật khẩu
+  const viaRpc = Boolean(s.session?.user.email && normEmail(s.session.user.email) === leaderEmail);
+
+  const invalid = validateRegistration(input, { requirePassword: !viaRpc });
   if (invalid) return fail(invalid);
 
-  const leaderEmail = normEmail(input.leader.email);
   const members = input.members.map((m) => ({
     full_name: m.fullName.trim(), email: normEmail(m.email), phone: m.phone.trim(), role_in_team: m.roleInTeam.trim(),
   }));
 
-  // Kiểm tra trước để báo lỗi rõ ràng (Auth chỉ trả "Database error saving new user")
+  // Kiểm tra trước để báo lỗi rõ ràng (hàm chỉ trả đúng/sai, không lộ email nào đã dự thi)
   const check = await supabase.rpc('check_team_registration', {
     p_team_name: input.teamName, p_emails: [leaderEmail, ...members.map((m) => m.email)],
   });
   if (check.error) return fail(check.error);
-  const c = check.data as { name_taken: boolean; emails_taken: string[] };
+  const c = check.data as { name_taken: boolean; any_email_taken: boolean };
   if (c.name_taken) return fail('Tên đội đã được dùng, hãy chọn tên khác');
-  if (c.emails_taken.length) return fail(`Email đã thuộc đội khác: ${c.emails_taken.join(', ')}`);
+  if (c.any_email_taken) return fail('Có email (trưởng nhóm hoặc thành viên) đã thuộc một đội khác');
 
-  // Đã đăng nhập bằng đúng email trưởng nhóm → đăng ký qua RPC
-  const { data: s } = await supabase.auth.getSession();
-  if (s.session?.user.email && normEmail(s.session.user.email) === leaderEmail) {
+  if (viaRpc) {
     const { data, error } = await supabase.rpc('register_team', {
       p_team_name: input.teamName, p_school: input.school, p_leader_name: input.leader.fullName,
       p_leader_phone: input.leader.phone, p_members: members,
@@ -89,7 +91,7 @@ export async function registerTeam(input: RegisterTeamInput): Promise<Result<{ t
     return ok({ teamId: data as string });
   }
 
-  // Tạo tài khoản trưởng nhóm; trigger DB tạo đội nguyên tử trong cùng transaction
+  // Tạo tài khoản trưởng nhóm. Đội nằm chờ trong metadata, DB chỉ tạo đội khi email trưởng nhóm đã xác nhận.
   const { data, error } = await supabase.auth.signUp({
     email: leaderEmail,
     password: input.leader.password,
@@ -111,8 +113,12 @@ export async function registerTeam(input: RegisterTeamInput): Promise<Result<{ t
   if (!data.session) return ok({ teamId: '', needsEmailConfirm: true });
 
   const team = await getMyTeam();
-  return ok({ teamId: team.ok && team.data ? team.data.team.id : '' });
+  if (team.ok && team.data) return ok({ teamId: team.data.team.id });
+  return fail('Đã tạo tài khoản nhưng chưa tạo được đội — hãy đăng ký lại (tên đội có thể vừa bị dùng)');
 }
+
+const TEAM_COLS = 'id, name, school, leader_id, status, created_at';
+const MEMBER_COLS = 'id, team_id, user_id, full_name, email, phone, role_in_team, created_at';
 
 export async function getMyTeam(): Promise<Result<{ team: Team; members: TeamMember[] } | null>> {
   const { data: s } = await supabase.auth.getSession();
@@ -122,14 +128,18 @@ export async function getMyTeam(): Promise<Result<{ team: Team; members: TeamMem
   const teamId = claim.data as string | null;
   if (!teamId) return ok(null);
   const [t, m] = await Promise.all([
-    supabase.from('teams').select('*').eq('id', teamId).single(),
-    supabase.from('team_members').select('*').eq('team_id', teamId).order('created_at'),
+    supabase.from('teams').select(TEAM_COLS).eq('id', teamId).single(),
+    supabase.from('team_members').select(MEMBER_COLS).eq('team_id', teamId).order('created_at'),
   ]);
   if (t.error) return fail(t.error);
   if (m.error) return fail(m.error);
   return ok({ team: mapTeam(t.data as TeamRow), members: (m.data as MemberRow[]).map(mapMember) });
 }
 
+/**
+ * Lưu lượt chạy và cập nhật tiến độ. Lưu ý: điểm do trình duyệt tự tính và gửi lên — BTC không nên coi đây là
+ * kết quả chính thức (xem supabase/README.md).
+ */
 export async function saveRun(teamId: string, result: RunResult, design: VehicleDesign): Promise<Result<{ runId: string }>> {
   const { data, error } = await supabase
     .from('runs')
@@ -140,12 +150,14 @@ export async function saveRun(teamId: string, result: RunResult, design: Vehicle
     .select('id')
     .single();
   if (error) return fail(error);
-  // Cập nhật điểm tốt nhất (hàm DB chỉ cho tăng)
-  await updateProgress(teamId, {
-    bestScore: result.score,
-    balanceBestS: result.mapId === 'balance_flat' ? result.balancedS : undefined,
-  });
-  return ok({ runId: (data as { id: string }).id });
+  const runId = (data as { id: string }).id;
+  // balance_flat chỉ tính thời gian giữ thăng bằng; điểm tốt nhất chỉ tính các map sa hình
+  const p = await updateProgress(
+    teamId,
+    result.mapId === 'balance_flat' ? { balanceBestS: result.balancedS } : { bestScore: result.score },
+  );
+  if (!p.ok) return fail(`Đã lưu lượt chạy nhưng chưa cập nhật được tiến độ: ${p.error}`);
+  return ok({ runId });
 }
 
 export async function updateProgress(teamId: string, patch: { stageReached?: Stage; balanceBestS?: number; bestScore?: number }): Promise<Result<null>> {
@@ -255,23 +267,30 @@ export interface AdminTeam {
   progress: TeamProgress | null;
 }
 
-const ADMIN_TEAM_SELECT = '*, team_members(*), progress(*)';
+const ADMIN_TEAM_SELECT = `${TEAM_COLS}, team_members(${MEMBER_COLS}), progress(*), team_admin_notes(note)`;
 
-type AdminTeamRow = TeamRow & { team_members: MemberRow[]; progress: ProgressRow | ProgressRow[] | null };
+type AdminTeamRow = TeamRow & {
+  team_members: MemberRow[];
+  progress: ProgressRow | ProgressRow[] | null;
+  team_admin_notes: { note: string } | { note: string }[] | null;
+};
 
 const mapAdminTeam = (r: AdminTeamRow): AdminTeam => {
   const p = one(r.progress);
   return {
     team: mapTeam(r),
-    adminNote: r.admin_note ?? '',
+    adminNote: one(r.team_admin_notes)?.note ?? '',
     members: [...(r.team_members ?? [])].map(mapMember),
     progress: p ? mapProgress(p) : null,
   };
 };
 
+/** RLS chặn thì PostgREST không báo lỗi mà chỉ đổi 0 dòng — kiểm tra số dòng trả về. */
+const NO_ROWS = 'Không có quyền hoặc dữ liệu không còn tồn tại';
+
 export async function adminListTeams(): Promise<Result<AdminTeam[]>> {
   const { data, error } = await supabase.from('teams').select(ADMIN_TEAM_SELECT).order('created_at', { ascending: false });
-  return error ? fail(error) : ok((data as AdminTeamRow[]).map(mapAdminTeam));
+  return error ? fail(error) : ok((data as unknown as AdminTeamRow[]).map(mapAdminTeam));
 }
 
 export async function adminGetTeam(teamId: string): Promise<Result<AdminTeam & { design: VehicleDesign | null; workspaceUpdatedAt: string | null }>> {
@@ -282,17 +301,22 @@ export async function adminGetTeam(teamId: string): Promise<Result<AdminTeam & {
   if (t.error) return fail(t.error);
   if (!t.data) return fail('Không tìm thấy đội');
   return ok({
-    ...mapAdminTeam(t.data as AdminTeamRow),
+    ...mapAdminTeam(t.data as unknown as AdminTeamRow),
     design: (w.data?.design as VehicleDesign | null) ?? null,
     workspaceUpdatedAt: w.data?.updated_at ?? null,
   });
 }
 
 export async function adminSetTeamStatus(teamId: string, status: Team['status'], note?: string): Promise<Result<null>> {
-  const patch: Record<string, string> = { status };
-  if (note !== undefined) patch.admin_note = note;
-  const { error } = await supabase.from('teams').update(patch).eq('id', teamId);
-  return error ? fail(error) : ok(null);
+  const { data, error } = await supabase.from('teams').update({ status }).eq('id', teamId).select('id');
+  if (error) return fail(error);
+  if (!data?.length) return fail(NO_ROWS);
+  if (note !== undefined) {
+    const n = await supabase.from('team_admin_notes').upsert({ team_id: teamId, note }).select('team_id');
+    if (n.error) return fail(n.error);
+    if (!n.data?.length) return fail(NO_ROWS);
+  }
+  return ok(null);
 }
 
 export interface BudgetItem { id: string; category: string; name: string; qty: number; unitPrice: number; note: string; sort: number }
@@ -323,13 +347,15 @@ export async function adminUpdateBudgetItem(id: string, patch: Partial<Omit<Budg
   if (patch.unitPrice !== undefined) row.unit_price = patch.unitPrice;
   if (patch.note !== undefined) row.note = patch.note;
   if (patch.sort !== undefined) row.sort = patch.sort;
-  const { error } = await supabase.from('budget_items').update(row).eq('id', id);
-  return error ? fail(error) : ok(null);
+  const { data, error } = await supabase.from('budget_items').update(row).eq('id', id).select('id');
+  if (error) return fail(error);
+  return data?.length ? ok(null) : fail(NO_ROWS);
 }
 
 export async function adminDeleteBudgetItem(id: string): Promise<Result<null>> {
-  const { error } = await supabase.from('budget_items').delete().eq('id', id);
-  return error ? fail(error) : ok(null);
+  const { data, error } = await supabase.from('budget_items').delete().eq('id', id).select('id');
+  if (error) return fail(error);
+  return data?.length ? ok(null) : fail(NO_ROWS);
 }
 
 /** Số lượt chạy của mỗi đội (cho trang Tiến độ). */

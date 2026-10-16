@@ -4,7 +4,7 @@ import { LogIn, Mail, KeyRound, UserPlus, LogOut, Users, ShieldCheck } from 'luc
 import { useAuth, clearRecovery } from '@/lib/useAuth';
 import { useMyTeam } from '@/lib/useMyTeam';
 import { sendPasswordReset, signInWithMagicLink, signInWithPassword, signUpMember, updatePassword } from '@/lib/api';
-import { isEmail } from '@/lib/format';
+import { friendlyError, isEmail } from '@/lib/format';
 
 type Mode = 'login' | 'magic' | 'signup' | 'forgot' | 'reset';
 
@@ -20,7 +20,9 @@ export default function Login() {
   const navigate = useNavigate();
   const next = params.get('next');
   const wantsReset = params.has('dat-lai');
-  const [mode, setMode] = useState<Mode>('login');
+  const [mode, setMode] = useState<Mode>(wantsReset ? 'forgot' : 'login');
+  // Link trong email lỗi/hết hạn: Supabase trả error_description trên query hoặc hash
+  const [linkError] = useState(() => readLinkError());
 
   useEffect(() => {
     if ((auth.recovery || wantsReset) && auth.session) setMode('reset');
@@ -43,6 +45,7 @@ export default function Login() {
 
   return (
     <Shell title="Đăng nhập">
+      <Msg kind="error" text={linkError} />
       {mode !== 'forgot' && (
         <div className="mb-6 grid grid-cols-3 rounded-lg bg-surface-2 p-1 text-sm">
           {TABS.map((t) => (
@@ -66,6 +69,19 @@ export default function Login() {
       </p>
     </Shell>
   );
+}
+
+function readLinkError(): string | null {
+  if (typeof window === 'undefined') return null;
+  const q = new URLSearchParams(window.location.search);
+  const h = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const code = q.get('error_code') ?? h.get('error_code');
+  const desc = q.get('error_description') ?? h.get('error_description');
+  if (!code && !desc) return null;
+  if (code === 'otp_expired' || /expired|invalid/i.test(desc ?? '')) {
+    return 'Link trong email đã hết hạn hoặc đã được dùng. Hãy yêu cầu gửi link mới.';
+  }
+  return friendlyError(desc ?? code);
 }
 
 // ---------------------------------------------------------------- Khung & phần tử chung

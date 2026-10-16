@@ -21,14 +21,22 @@ export default function Costs() {
     }
   }
 
-  function patchLocal(id: string, patch: Partial<BudgetItem>) {
-    setData((list) => (list ?? []).map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  /** Sửa lạc quan; lỗi thì trả lại danh sách trước đó. */
+  async function optimistic(apply: (list: BudgetItem[]) => BudgetItem[], call: () => Promise<{ ok: boolean; error?: string }>) {
+    const before = items;
+    setData(apply(before));
+    const r = await track(call());
+    if (!r.ok) {
+      setData(before);
+      setError(`${r.error ?? 'Lỗi'} — đã hoàn tác thay đổi`);
+    } else setError(null);
   }
 
   async function save(id: string, patch: Partial<BudgetItem>) {
-    patchLocal(id, patch);
-    const r = await track(adminUpdateBudgetItem(id, patch));
-    if (!r.ok) setError(r.error);
+    await optimistic(
+      (list) => list.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+      () => adminUpdateBudgetItem(id, patch),
+    );
   }
 
   async function addRow(category: string) {
@@ -47,17 +55,22 @@ export default function Costs() {
     const t = to.trim();
     if (!t || t === from) return;
     const ids = items.filter((i) => i.category === from).map((i) => i.id);
-    setData((list) => (list ?? []).map((it) => (ids.includes(it.id) ? { ...it, category: t } : it)));
-    const rs = await track(Promise.all(ids.map((id) => adminUpdateBudgetItem(id, { category: t }))));
-    const bad = rs.find((r) => !r.ok);
-    if (bad && !bad.ok) setError(bad.error);
+    await optimistic(
+      (list) => list.map((it) => (ids.includes(it.id) ? { ...it, category: t } : it)),
+      async () => {
+        const rs = await Promise.all(ids.map((id) => adminUpdateBudgetItem(id, { category: t })));
+        const bad = rs.find((r) => !r.ok);
+        if (!bad) return { ok: true };
+        // Một phần đã đổi: đưa các dòng đã đổi về tên cũ để không bị tách hạng mục
+        await Promise.all(ids.map((id, i) => rs[i].ok && adminUpdateBudgetItem(id, { category: from })));
+        return bad;
+      },
+    );
   }
 
   async function remove(it: BudgetItem) {
     if (!window.confirm(`Xoá dòng "${it.name || '(chưa đặt tên)'}"?`)) return;
-    setData((list) => (list ?? []).filter((x) => x.id !== it.id));
-    const r = await track(adminDeleteBudgetItem(it.id));
-    if (!r.ok) setError(r.error);
+    await optimistic((list) => list.filter((x) => x.id !== it.id), () => adminDeleteBudgetItem(it.id));
   }
 
   function exportCsv() {

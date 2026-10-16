@@ -33,13 +33,14 @@ export function isEmail(e: string): boolean {
 }
 
 /** Kiểm tra form đăng ký phía client. Trả thông báo lỗi tiếng Việt hoặc null nếu hợp lệ. */
-export function validateRegistration(input: RegisterTeamInput): string | null {
+/** `opts.requirePassword = false` khi trưởng nhóm đã đăng nhập (đăng ký qua RPC, không tạo tài khoản). */
+export function validateRegistration(input: RegisterTeamInput, opts: { requirePassword?: boolean } = {}): string | null {
   if (input.teamName.trim().length < 2) return 'Tên đội cần ít nhất 2 ký tự';
   if (input.teamName.trim().length > 80) return 'Tên đội tối đa 80 ký tự';
   if (!input.school.trim()) return 'Vui lòng nhập tên trường';
   if (!input.leader.fullName.trim()) return 'Vui lòng nhập họ tên trưởng nhóm';
   if (!isEmail(input.leader.email)) return 'Email trưởng nhóm không hợp lệ';
-  if (input.leader.password.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự';
+  if ((opts.requirePassword ?? true) && input.leader.password.length < 6) return 'Mật khẩu cần ít nhất 6 ký tự';
   if (input.members.length > 4) return 'Mỗi đội tối đa 5 người (trưởng nhóm + 4 thành viên)';
   const seen = new Set([normEmail(input.leader.email)]);
   for (const [i, m] of input.members.entries()) {
@@ -96,6 +97,7 @@ export function lineTotal(it: { qty: number; unitPrice: number }): number {
 /** Ánh xạ thông báo lỗi Supabase/Postgres sang tiếng Việt dễ hiểu. */
 export function friendlyError(message: string | undefined | null): string {
   const m = message ?? '';
+  if (/expired|invalid.*(link|token)|otp_expired/i.test(m)) return 'Link đã hết hạn hoặc đã được dùng — hãy yêu cầu link mới';
   if (/Invalid login credentials/i.test(m)) return 'Email hoặc mật khẩu không đúng';
   if (/Email not confirmed/i.test(m)) return 'Email chưa được xác nhận — hãy mở thư xác nhận trong hộp thư';
   if (/User already registered/i.test(m)) return 'Email này đã có tài khoản — hãy đăng nhập';
