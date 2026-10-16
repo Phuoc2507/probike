@@ -7,32 +7,44 @@ Project ref `mzdpczafjotnmozmrhyi`. Migration trong `migrations/` đã được 
 | Bảng | Ghi chú |
 |---|---|
 | `profiles` | tạo tự động khi có tài khoản mới (trigger `on_auth_user_created`). Người dùng chỉ sửa được `full_name`, `school`, `phone` — **không** sửa được `role` |
-| `teams` | `status` pending/approved/rejected, `admin_note` (chỉ BTC thấy qua trang BTC). Tên đội duy nhất (không phân biệt hoa thường) |
+| `teams` | `status` pending/approved/rejected. Tên đội duy nhất (không phân biệt hoa thường) |
+| `team_admin_notes` | ghi chú của BTC về đội — **chỉ admin** (tách khỏi `teams` để thành viên không đọc được) |
 | `team_members` | tối đa 5 người/đội (trigger), mỗi email và mỗi tài khoản chỉ thuộc 1 đội |
 | `workspaces` | `ydoc_snapshot` (bytea, cập nhật Yjs đầy đủ), `design` (jsonb, bản sao để BTC xem nhanh) |
 | `runs` | lịch sử lượt chạy (`result`, `design` tại thời điểm chạy, `score`, `time_s`) |
-| `progress` | `stage_reached`, `balance_best_s`, `best_score` — chỉ tăng (RPC `update_progress`) |
+| `progress` | `stage_reached`, `balance_best_s`, `best_score` — thành viên KHÔNG ghi thẳng được; chỉ qua RPC `update_progress` (kiểm tra thành viên, chỉ tăng) |
 | `budget_items` | chi phí tổ chức — **chỉ admin**; đã điền sẵn 18 dòng ước lượng |
 
 ## RPC (gọi qua `supabase.rpc`)
 
 | Hàm | Ai gọi | Việc |
 |---|---|---|
-| `check_team_registration(p_team_name, p_emails[])` | anon, authenticated | `{name_taken, emails_taken[]}` — kiểm tra trước khi đăng ký |
+| `check_team_registration(p_team_name, p_emails[])` | anon, authenticated | tối đa 6 email; trả `{name_taken, any_email_taken}` (chỉ đúng/sai, không lộ email nào) |
 | `register_team(p_team_name, p_school, p_leader_name, p_leader_phone, p_members jsonb)` | authenticated | tạo đội nguyên tử cho người đã đăng nhập (trả team id) |
 | `claim_membership()` | authenticated | gắn tài khoản (email đã xác nhận) vào dòng `team_members` cùng email; trả team id |
-| `update_progress(p_team, p_stage, p_balance, p_score)` | thành viên đội | upsert tiến độ, lấy `greatest` |
+| `update_progress(p_team, p_stage, p_balance, p_score)` | thành viên đội | upsert tiến độ, lấy `greatest`; người ngoài đội bị từ chối |
 
 Phần cần quyền cao nằm trong schema `private` (không lộ qua API): `create_team`, `link_member_rows`, `is_admin`, `my_team_ids`, `handle_new_user`.
 
 ## Đăng ký đội & gắn thành viên
 
-1. Trưởng nhóm điền form `/dang-ky` → `api.registerTeam()` gọi `auth.signUp` với metadata `pending_team`.
-   Trigger tạo profile **và** đội + 5 dòng thành viên + progress + workspace trong **cùng một transaction** với việc tạo
-   tài khoản (lỗi thì không tạo gì cả). Nếu trưởng nhóm đã đăng nhập sẵn bằng đúng email đó thì dùng RPC `register_team`.
-2. Thành viên: vào `/dang-nhap` → tab **Link qua email** (hoặc **Thành viên mới** nếu muốn mật khẩu) bằng **đúng email**
-   trưởng nhóm đã khai báo → tài khoản tự gắn vào đội (trigger khi tạo tài khoản; người đã có tài khoản từ trước thì
-   `getMyTeam()` gọi `claim_membership()`). Không cần mã mời.
+1. Trưởng nhóm điền form `/dang-ky` → `api.registerTeam()` gọi `auth.signUp`, thông tin đội nằm chờ trong metadata
+   `pending_team`. **Đội chỉ được tạo khi trưởng nhóm bấm link xác nhận email** (trigger `on_auth_user_confirmed`):
+   đội + các dòng thành viên + progress + workspace tạo trong một transaction. Nếu lúc xác nhận tên đội đã bị lấy thì
+   bỏ qua (không chặn xác nhận) — trưởng nhóm đăng nhập rồi đăng ký lại; khi đã đăng nhập, form dùng RPC `register_team`
+   (không cần mật khẩu).
+2. Thành viên: dòng `team_members` được tạo với `user_id = null`. Chỉ khi **chính người đó** xác nhận email / đăng nhập
+   bằng đúng email trưởng nhóm đã khai báo (tab **Link qua email** hoặc **Thành viên mới** ở `/dang-nhap`) thì tài khoản
+   mới được gắn vào đội (trigger xác nhận email; người có tài khoản từ trước thì `getMyTeam()` gọi `claim_membership()`).
+   Không cần mã mời.
+3. Giới hạn còn lại: trưởng nhóm có thể khai email của người khác; email đó bị giữ cho đội ấy cho tới khi BTC xoá dòng
+   thành viên (bảng `team_members`, policy admin delete). Nếu một đội báo "email đã thuộc đội khác", BTC kiểm tra và xoá.
+
+## Giới hạn cố hữu: điểm do trình duyệt tự khai
+
+Mô phỏng chạy trong trình duyệt của thí sinh, nên `runs.score`, `runs.time_s`, `progress.*` là số **client gửi lên**
+(RLS chỉ đảm bảo đúng đội, không đảm bảo đúng kết quả). Bảng tiến độ dùng để theo dõi; kết quả chính thức phải chấm ở
+vòng thi thật (hoặc BTC chạy lại mô phỏng từ `runs.design` + code của đội).
 
 ## Realtime
 
