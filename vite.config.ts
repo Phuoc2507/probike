@@ -11,5 +11,7 @@ export default defineConfig({
   worker: { format: 'es' },
   test: {
     environment: 'node',
+    // Chỉ quét test trong src, bỏ qua các worktree ở .claude/worktrees
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });
