@@ -62,6 +62,8 @@ export interface SensorModel {
   spec: SensorSpec;
   position: V3;
   mount: Q4;             // hướng lắp (tia đo theo +x cục bộ)
+  /** Khoảng từ tâm hộp tới mặt phát tia (nửa chiều dài theo x cục bộ). */
+  faceOffset: number;
   /** encoder: đối tượng đo (động cơ kéo/bánh đà/bánh xe). */
   target?: { type: 'drive' | 'reaction' | 'wheel'; uid: string };
 }
@@ -344,7 +346,7 @@ export function analyzeVehicle(design: VehicleDesign): VehicleModel {
     if (!it?.sensor) continue;
     const s: SensorModel = {
       uid: p.uid, name: p.name, itemId: p.itemId, spec: it.sensor,
-      position: fromVec3(p.position), mount: qFromEulerDeg(p.rotationDeg),
+      position: fromVec3(p.position), mount: qFromEulerDeg(p.rotationDeg), faceOffset: it.size[0] / 2,
     };
     if (it.sensor.kind === 'encoder') {
       const parent = p.attachTo ? byUid.get(p.attachTo) : undefined;

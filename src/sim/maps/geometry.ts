@@ -2,7 +2,7 @@
 // lõi vật lý (tạo collider) và phần hiển thị 3D (vẽ hộp, đá, cầu).
 
 import type { MapId, Quat, Vec3 } from '@/shared/types';
-import { Rng, qHeading, qMul, qAxisAngle, subSeed, toQuat, v3, DEG } from '../math';
+import { Rng, qHeading, qMul, qAxisAngle, qRotate, subSeed, toQuat, v3, DEG } from '../math';
 import { BALANCE_FLAT, CHECKPOINT_NAMES, COURSE, MAP_NAMES, SEGMENTS } from './spec';
 
 export type SegmentRole = 'lead' | 'start' | 'u_turn' | 'seesaw' | 'rocks' | 'finish' | 'runout';
@@ -349,11 +349,15 @@ function computeBounds(boxes: BoxGeom[]): { min: Vec3; max: Vec3 } {
   const min: Vec3 = [Infinity, 0, Infinity];
   const max: Vec3 = [-Infinity, COURSE.wallHeight, -Infinity];
   for (const b of boxes) {
-    const r = Math.hypot(b.size[0], b.size[2]) / 2;
-    min[0] = Math.min(min[0], b.center[0] - r);
-    min[2] = Math.min(min[2], b.center[2] - r);
-    max[0] = Math.max(max[0], b.center[0] + r);
-    max[2] = Math.max(max[2], b.center[2] + r);
+    const q = { x: b.quaternion[0], y: b.quaternion[1], z: b.quaternion[2], w: b.quaternion[3] };
+    for (const sx of [-0.5, 0.5])
+      for (const sz of [-0.5, 0.5]) {
+        const c = qRotate(q, v3(sx * b.size[0], 0, sz * b.size[2]));
+        min[0] = Math.min(min[0], b.center[0] + c.x);
+        min[2] = Math.min(min[2], b.center[2] + c.z);
+        max[0] = Math.max(max[0], b.center[0] + c.x);
+        max[2] = Math.max(max[2], b.center[2] + c.z);
+      }
   }
   return { min, max };
 }

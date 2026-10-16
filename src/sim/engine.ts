@@ -140,9 +140,13 @@ export class RapierSimEngine implements SimEngine {
     this.pushRng = new Rng(subSeed(config.seed, 13));
     if (config.disturbances) this.nextPushT = PHYSICS.push.firstAfterS + this.pushRng.range(0, 1);
 
+    // một bước khởi động (không tính giờ) để Rapier dựng cấu trúc truy vấn tia cho lần đo đầu tiên
+    this.world.step();
     this.prevLinvel = fromR(this.chassis.linvel());
     this.prevAngvel = fromR(this.chassis.angvel());
     this.sensorCtx = this.makeSensorContext();
+    this.sensorCtx.position = fromR(this.chassis.translation());
+    this.sensorCtx.rotation = fromRQ(this.chassis.rotation());
     this.channels = this.vehicle.sensors.map((s) => new SensorChannel(s, config.realism, this.sensorRng, this.sensorCtx));
     this.updateStatus(true);
   }

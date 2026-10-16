@@ -9,6 +9,6 @@ export type {
 } from './maps/geometry';
 export * from './maps/spec';
 export { SCORING, computeScore } from './scoring';
-export { NOISE_FACTOR, LATENCY_FACTOR, sharpVoltage, sharpDistance, sensorRay } from './sensors';
+export { NOISE_FACTOR, LATENCY_FACTOR, sharpVoltage, sharpDistance, rayFrom } from './sensors';
 export { SAMPLE_DESIGN, SAMPLE_GAINS, SAMPLE_BALANCE_CODE, SampleBalanceController } from './sampleDesign';
 export type { BalanceGains } from './sampleDesign';

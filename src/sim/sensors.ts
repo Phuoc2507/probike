@@ -97,9 +97,7 @@ export class SensorChannel {
   }
 
   private worldPose(ctx: SensorContext, localDir: V3): { origin: V3; dir: V3 } {
-    const origin = v3(...addV(ctx.position, qRotate(ctx.rotation, this.model.position)));
-    const dir = qRotate(qMul(ctx.rotation, this.model.mount), localDir);
-    return { origin, dir };
+    return rayFrom(this.model, ctx.position, ctx.rotation, localDir);
   }
 
   measure(ctx: SensorContext): SensorValue | ImuReading {
@@ -179,8 +177,8 @@ export class SensorChannel {
         const { origin, dir } = this.worldPose(ctx, v3(1, 0, 0));
         const hit = ctx.castRay(origin, dir, maxR);
         if (!hit) return 0;
-        // bề mặt trắng phản xạ mạnh trong toàn tầm; nền xám chỉ "thấy" khi rất gần
-        return hit.white || hit.dist <= maxR * 0.4 ? 1 : 0;
+        // bề mặt trắng phản xạ mạnh trong toàn tầm; nền xám chỉ "thấy" khi sát (≤ 15% tầm)
+        return hit.white || hit.dist <= maxR * 0.15 ? 1 : 0;
       }
       case 'lidar_360': {
         const maxR = s.maxRange ?? 12;
@@ -208,10 +206,15 @@ function addV(a: V3, b: V3): [number, number, number] {
   return [a.x + b.x, a.y + b.y, a.z + b.z];
 }
 
-/** Gốc tia/hướng tia của cảm biến trong thế giới — để phần hiển thị vẽ tia đo nếu cần. */
-export function sensorRay(model: SensorModel, position: V3, rotation: Q4): { origin: V3; dir: V3 } {
-  const origin = v3(...addV(position, qRotate(rotation, model.position)));
-  const dir = qRotate(qMul(rotation, model.mount), v3(1, 0, 0));
+/** Tia đo trong thế giới: xuất phát từ mặt trước của cảm biến. Phần hiển thị có thể dùng để vẽ tia. */
+export function rayFrom(model: SensorModel, position: V3, rotation: Q4, localDir: V3 = v3(1, 0, 0)): { origin: V3; dir: V3 } {
+  const q = qMul(rotation, model.mount);
+  const dir = qRotate(q, localDir);
+  const face = qRotate(q, v3(model.faceOffset, 0, 0));
+  const origin = v3(...addV(add3(position, qRotate(rotation, model.position)), face));
   return { origin, dir };
 }
 
+function add3(a: V3, b: V3): V3 {
+  return v3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
