@@ -83,7 +83,10 @@ export function validatePartName(design: VehicleDesign, uid: string, name: strin
 export function defaultBaseName(item: CatalogItem): string {
   switch (item.id) {
     case 'wheel_btc': return 'banhXe';
-    case 'mpu6050': case 'mpu9250': return 'imu';
+    case 'mpu6050': case 'mpu9250': case 'bno055': return 'imu';
+    case 'mini560': return 'haAp';
+    case 'switch_power': return 'congTac';
+    case 'standoff_m3': return 'truDo';
     case 'encoder_hall': return 'encoder';
     case 'hcsr04': return 'sieuAmTruoc';
     case 'vl53l0x': case 'vl53l1x': return 'laserTruoc';

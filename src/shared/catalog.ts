@@ -45,6 +45,12 @@ export const CATALOG: CatalogItem[] = [
     description: '9 trục (thêm la bàn), nhiễu thấp hơn, góc yaw ổn định hơn.',
   },
   {
+    id: 'bno055', name: 'IMU BNO055 (có bộ lọc sẵn)', category: 'sensor', priceVnd: 280_000, massKg: 0.004,
+    size: [0.027, 0.004, 0.02],
+    sensor: { kind: 'imu', rateHz: 100, noiseStd: 0.08, latencyMs: 10 },
+    description: 'Tự tính sẵn góc nghiêng rất ổn định, nhưng chỉ 100 Hz và trễ hơn MPU6050.',
+  },
+  {
     id: 'encoder_hall', name: 'Encoder Hall (gắn động cơ)', category: 'sensor', priceVnd: 30_000, massKg: 0.005,
     size: [0.02, 0.01, 0.02],
     sensor: { kind: 'encoder', rateHz: 200, noiseStd: 0.05, latencyMs: 2 },
@@ -99,6 +105,11 @@ export const CATALOG: CatalogItem[] = [
     description: 'Rẻ, phổ biến, hơi nặng và rơ.',
   },
   {
+    id: 'motor_ga25', name: 'Động cơ GA25-370 giảm tốc 280 rpm', category: 'motor', priceVnd: 130_000, massKg: 0.09,
+    size: [0.065, 0.025, 0.025], motor: { kind: 'drive', stallTorqueNm: 0.35, noLoadRpm: 280 },
+    description: 'Động cơ kéo khoẻ, hộp số kim loại, hợp leo cầu bập bênh. Khá nặng.',
+  },
+  {
     id: 'motor_rw_dc', name: 'Động cơ bánh đà DC 370 (không giảm tốc)', category: 'motor', priceVnd: 60_000, massKg: 0.06,
     size: [0.03, 0.024, 0.024], motor: { kind: 'reaction', stallTorqueNm: 0.04, noLoadRpm: 8000 },
     description: 'Quay bánh đà để tạo mô-men chống đổ. Rẻ nhưng mô-men vừa phải.',
@@ -130,6 +141,11 @@ export const CATALOG: CatalogItem[] = [
     size: [0.008, 0.1, 0.1], flywheel: { radius: 0.05, inertiaKgM2: 0.5 * 0.2 * 0.05 * 0.05 },
     description: 'Quán tính lớn, cân bằng ổn định nhưng nặng.',
   },
+  {
+    id: 'flywheel_brass_70', name: 'Đĩa bánh đà đồng Ø70 mm', category: 'flywheel', priceVnd: 80_000, massKg: 0.15,
+    size: [0.006, 0.07, 0.07], flywheel: { radius: 0.035, inertiaKgM2: 0.5 * 0.15 * 0.035 * 0.035 },
+    description: 'Nhỏ gọn nhưng nặng, vừa với xe hẹp.',
+  },
 
   // ------------------------------------------------------------ Driver
   {
@@ -156,11 +172,23 @@ export const CATALOG: CatalogItem[] = [
     id: 'buck_lm2596', name: 'Mạch hạ áp LM2596', category: 'power', priceVnd: 20_000, massKg: 0.01,
     size: [0.043, 0.014, 0.021], description: 'Hạ áp cho vi điều khiển và cảm biến.',
   },
+  {
+    id: 'mini560', name: 'Mạch hạ áp Mini560 5 V', category: 'power', priceVnd: 25_000, massKg: 0.002,
+    size: [0.02, 0.006, 0.013], description: 'Hạ áp 5 V siêu nhỏ, nhẹ hơn LM2596.',
+  },
+  {
+    id: 'switch_power', name: 'Công tắc nguồn', category: 'power', priceVnd: 5_000, massKg: 0.003,
+    size: [0.019, 0.013, 0.013], description: 'Bật/tắt nguồn cho xe — nên có để an toàn.',
+  },
 
   // ------------------------------------------------------------ Kết cấu
   {
     id: 'bracket_3d', name: 'Giá đỡ in 3D', category: 'structure', priceVnd: 15_000, massKg: 0.01,
     size: [0.03, 0.02, 0.03], description: 'Giá gắn cảm biến/động cơ lên khung.',
+  },
+  {
+    id: 'standoff_m3', name: 'Bộ trụ đồng + ốc M3', category: 'structure', priceVnd: 10_000, massKg: 0.008,
+    size: [0.006, 0.02, 0.006], description: 'Trụ đỡ mạch, nâng vi điều khiển cách khung.',
   },
 ];
 
