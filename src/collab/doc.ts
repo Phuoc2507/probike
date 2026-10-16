@@ -144,9 +144,15 @@ export function isSeeded(doc: Y.Doc): boolean {
   return parts(doc).main.get('seeded') === 1;
 }
 
+/** Doc chưa có gì: chưa seed và không có nội dung nào (code, thiết kế, tham số...). */
+export function isEmptyDoc(doc: Y.Doc): boolean {
+  const p = parts(doc);
+  return !isSeeded(doc) && p.code.length === 0 && p.main.size === 0 && p.params.size === 0 && p.run.size === 0;
+}
+
 /** Áp giá trị mặc định nếu doc còn trống (gọi SAU khi đã nạp snapshot và đồng bộ với đồng đội). */
 export function seedIfEmpty(doc: Y.Doc, d?: SeedDefaults, origin: unknown = 'seed'): boolean {
-  if (isSeeded(doc)) return false;
+  if (!isEmptyDoc(doc)) return false;
   Y.applyUpdate(doc, buildSeedUpdate(d), origin);
   return true;
 }

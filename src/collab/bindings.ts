@@ -95,6 +95,8 @@ export function useRunStream(run: RunChannel | null | undefined, onFrame?: (s: S
   const [info, setInfo] = useState<RunStartInfo | null>(null);
   const [latest, setLatest] = useState<SimSnapshot | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
+  /** lý do lượt chạy bị huỷ (bị giành lượt, người chạy mất kết nối...) */
+  const [cancelled, setCancelled] = useState<string | null>(null);
   const frameCb = useRef(onFrame);
   frameCb.current = onFrame;
 
@@ -107,7 +109,9 @@ export function useRunStream(run: RunChannel | null | undefined, onFrame?: (s: S
         setInfo(i);
         setResult(null);
         setLatest(null);
+        setCancelled(null);
       }),
+      run.onCancel((_id, reason) => setCancelled(reason)),
       run.onFrame((s, id) => {
         frameCb.current?.(s, id);
         pending = s;
@@ -126,6 +130,7 @@ export function useRunStream(run: RunChannel | null | undefined, onFrame?: (s: S
     };
   }, [run]);
 
+  /** null nếu đồng đội đang chạy */
   const start = useCallback((mapId: MapId, seed?: number) => run?.start(mapId, seed) ?? null, [run]);
-  return { info, latest, result, start };
+  return { info, latest, result, cancelled, start };
 }

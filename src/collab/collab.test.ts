@@ -8,7 +8,7 @@ import { MemoryBus, MemoryTransport } from './transport';
 import { YjsBroadcastProvider } from './provider';
 import { RunChannel } from './run';
 import { WorkspaceSession } from './session';
-import { debounceMax, isElectedSaver, localStore, type SnapshotStore } from './persistence';
+import { clearPersonalWorkspace, debounceMax, isElectedSaver, localStore, type SnapshotStore } from './persistence';
 
 afterEach(() => vi.useRealTimers());
 
@@ -245,11 +245,181 @@ describe('persistence', () => {
     expect(isElectedSaver('z', [])).toBe(true);
   });
 
-  it('localStore lưu/đọc base64 qua storage', async () => {
+  function memKV() {
     const m = new Map<string, string>();
-    const st = localStore('k', { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v) });
+    return { m, kv: { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) } };
+  }
+
+  it('localStore lưu/đọc qua storage', async () => {
+    const { kv } = memKV();
+    const st = localStore('k', kv);
     expect(await st.load()).toBeNull();
     await st.save(new Uint8Array([1, 2, 250]), null);
     expect(Array.from((await st.load())!)).toEqual([1, 2, 250]);
+  });
+
+  it('localStore bỏ bài cũ quá hạn (máy dùng chung) và clearPersonalWorkspace xoá được', async () => {
+    const { kv, m } = memKV();
+    let now = 1_000_000;
+    const st = localStore('k', kv, { ttlMs: 1000, now: () => now });
+    await st.save(new Uint8Array([7]), null);
+    now += 500;
+    expect(await st.load()).not.toBeNull();
+    now += 1000;
+    expect(await st.load()).toBeNull();
+    expect(m.has('k')).toBe(false);
+
+    await st.save(new Uint8Array([7]), null);
+    clearPersonalWorkspace(kv, 'k');
+    expect(await st.load()).toBeNull();
+  });
+});
+
+describe('WorkspaceSession — an toàn khi tải/lưu lỗi', () => {
+  it('tải bản lưu lỗi → không seed, không lưu đè; thử lại thành công thì giữ dữ liệu thật', async () => {
+    vi.useFakeTimers();
+    // Bản lưu thật của đội trên server
+    const real = new Y.Doc();
+    applyTextDiff(real.getText('code'), 'code thật của đội');
+    let failLoad = true;
+    const saves: Uint8Array[] = [];
+    const store: SnapshotStore = {
+      async load() {
+        if (failLoad) throw new Error('mất mạng');
+        return Y.encodeStateAsUpdate(real);
+      },
+      async save(u) {
+        saves.push(u);
+      },
+    };
+    const s = new WorkspaceSession({
+      kind: 'team', transport: new MemoryTransport(new MemoryBus()), store, user: { userId: 'a', name: 'An' },
+      seed: { code: 'mẫu' }, providerSyncTimeoutMs: 20, saveWaitMs: 50, retryBaseMs: 1000,
+    });
+    await s.start();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(s.state.loaded).toBe(false);
+    expect(s.state.loadError).toMatch(/mất mạng/);
+    expect(s.state.ready).toBe(false);
+    expect(parts(s.doc).code.toString()).toBe(''); // không gieo mặc định
+    expect(saves.length).toBe(0); // không ghi đè
+
+    failLoad = false;
+    await vi.advanceTimersByTimeAsync(1000); // tự thử lại
+    expect(s.state.loaded).toBe(true);
+    expect(s.state.ready).toBe(true);
+    expect(parts(s.doc).code.toString()).toBe('code thật của đội'); // không bị seed đè/nhân đôi
+    s.destroy();
+  });
+
+  it('lưu lỗi → tự thử lại có giãn cách', async () => {
+    vi.useFakeTimers();
+    let fails = 2;
+    let ok = 0;
+    const store: SnapshotStore = {
+      async load() {
+        return null;
+      },
+      async save() {
+        if (fails-- > 0) throw new Error('503');
+        ok++;
+      },
+    };
+    const s = new WorkspaceSession({ kind: 'personal', transport: null, store, user: { userId: null, name: 'K' }, saveWaitMs: 10, retryBaseMs: 100 });
+    await s.start();
+    setParam(s.doc, 'kp', 5);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(s.state.error).toMatch(/503/);
+    await vi.advanceTimersByTimeAsync(100); // lần 2 (sau 100 ms) vẫn lỗi
+    expect(ok).toBe(0);
+    await vi.advanceTimersByTimeAsync(200); // lần 3 (sau 200 ms) thành công
+    expect(ok).toBe(1);
+    expect(s.state.error).toBeNull();
+    s.destroy();
+  });
+});
+
+describe('RunChannel — một lượt chạy mỗi đội', () => {
+  function pair(clock: { t: number }) {
+    const bus = new MemoryBus();
+    const ta = new MemoryTransport(bus);
+    const tb = new MemoryTransport(bus);
+    void ta.connect();
+    void tb.connect();
+    // Hai máy dùng chung trạng thái doc (giả lập Yjs đã đồng bộ)
+    const docA = new Y.Doc();
+    const docB = new Y.Doc();
+    docA.on('update', (u: Uint8Array, o: unknown) => o !== 'net' && Y.applyUpdate(docB, u, 'net'));
+    docB.on('update', (u: Uint8Array, o: unknown) => o !== 'net' && Y.applyUpdate(docA, u, 'net'));
+    const opts = { clock: () => clock.t, now: () => clock.t, staleMs: 6000, heartbeatMs: 2000, framesPerMessage: 1 };
+    return {
+      a: new RunChannel(ta, docA, { userId: 'a', name: 'An' }, opts),
+      b: new RunChannel(tb, docB, { userId: 'b', name: 'Bình' }, opts),
+      docB,
+    };
+  }
+
+  it('đồng đội đang chạy thì không bắt đầu được lượt khác', () => {
+    vi.useFakeTimers();
+    const clock = { t: 0 };
+    const { a, b } = pair(clock);
+    expect(a.start('straight')).not.toBeNull();
+    expect(b.busy()?.startedBy?.name).toBe('An');
+    expect(b.start('rocks')).toBeNull();
+    a.end(result);
+    expect(b.busy()).toBeNull();
+    expect(b.start('rocks')).not.toBeNull();
+    a.destroy();
+    b.destroy();
+  });
+
+  it('người chạy mất tích → hết hạn, trạng thái về idle, người khác chạy được', () => {
+    vi.useFakeTimers();
+    const clock = { t: 0 };
+    const { a, b, docB } = pair(clock);
+    const cancels: string[] = [];
+    b.onCancel((_id, reason) => cancels.push(reason));
+    a.start('straight');
+    // A đóng tab đột ngột: không còn nhịp tim, không có run:end
+    a['stopHeartbeat']();
+    a['transport'] = null;
+    for (let i = 0; i < 5; i++) {
+      clock.t += 2000;
+      vi.advanceTimersByTime(2000);
+    }
+    expect(getRunState(docB).status).toBe('idle');
+    expect(b.busy()).toBeNull();
+    expect(cancels.length).toBe(1);
+    expect(b.start('rocks')).not.toBeNull();
+    b.destroy();
+  });
+
+  it('còn nhịp tim thì không hết hạn', () => {
+    vi.useFakeTimers();
+    const clock = { t: 0 };
+    const { a, b } = pair(clock);
+    a.start('straight');
+    for (let i = 0; i < 10; i++) {
+      clock.t += 2000;
+      vi.advanceTimersByTime(2000);
+    }
+    expect(b.busy()).not.toBeNull();
+    a.destroy();
+    b.destroy();
+  });
+
+  it('bỏ khung của lượt khác lượt đang xem', () => {
+    vi.useFakeTimers();
+    const clock = { t: 0 };
+    const { a, b } = pair(clock);
+    const seen: string[] = [];
+    b.onFrame((_s, id) => seen.push(id));
+    const id = a.start('straight')!;
+    a.frame(snap(0));
+    // Tin lạc từ lượt cũ
+    b['onRemoteFrames']('lượt-cũ', [snap(1)]);
+    expect(seen).toEqual([id]);
+    a.destroy();
+    b.destroy();
   });
 });

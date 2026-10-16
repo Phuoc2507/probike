@@ -10,30 +10,66 @@ export interface SnapshotStore {
 
 export const PERSONAL_KEY = 'probike:workspace:personal';
 
+/**
+ * Bài luyện tập cá nhân bỏ dở quá lâu thì coi như của người khác (máy dùng chung ở quán net, phòng máy trường)
+ * → không nạp lại. Thêm nút "Xoá bài luyện tập trên máy này" gọi clearPersonalWorkspace().
+ */
+export const PERSONAL_TTL_MS = 3 * 24 * 3600 * 1000;
+
 /** Giao diện tối thiểu của localStorage (để test bằng Map). */
 export interface KVStorage {
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
+  removeItem(k: string): void;
 }
 
-export function localStore(key = PERSONAL_KEY, storage: KVStorage | null = typeof localStorage !== 'undefined' ? localStorage : null): SnapshotStore {
+const defaultStorage = (): KVStorage | null => {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
+};
+
+export function localStore(
+  key = PERSONAL_KEY,
+  storage: KVStorage | null = defaultStorage(),
+  opts: { ttlMs?: number; now?: () => number } = {},
+): SnapshotStore {
+  const ttl = opts.ttlMs ?? PERSONAL_TTL_MS;
+  const now = opts.now ?? Date.now;
   return {
     async load() {
       try {
         const v = storage?.getItem(key);
-        return v ? fromBase64(v) : null;
+        if (!v) return null;
+        const rec = JSON.parse(v) as { v: 1; at: number; data: string };
+        if (now() - rec.at > ttl) {
+          storage?.removeItem(key);
+          return null;
+        }
+        return fromBase64(rec.data);
       } catch {
-        return null;
+        return null; // hỏng / định dạng cũ → bắt đầu mới (chế độ cá nhân không có dữ liệu chung để mất)
       }
     },
     async save(snapshot) {
       try {
-        storage?.setItem(key, toBase64(snapshot));
+        storage?.setItem(key, JSON.stringify({ v: 1, at: now(), data: toBase64(snapshot) }));
       } catch {
         // đầy bộ nhớ / chế độ ẩn danh — bỏ qua
       }
     },
   };
+}
+
+/** Xoá bài luyện tập cá nhân lưu trên máy này. */
+export function clearPersonalWorkspace(storage: KVStorage | null = defaultStorage(), key = PERSONAL_KEY) {
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // bỏ qua
+  }
 }
 
 export function supabaseStore(teamId: string): SnapshotStore {
