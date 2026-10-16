@@ -20,6 +20,7 @@ function Playground() {
   const [error, setError] = useState<CodeError | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [changes, setChanges] = useState(0);
+  const [readOnly, setReadOnly] = useState(false);
   const runningRef = useRef(false);
 
   const jsFromBlocks = useMemo(() => blocksJsonToJs(blocks), [blocks]);
@@ -79,11 +80,14 @@ function Playground() {
         <button type="button" onClick={run} className="ml-auto rounded-md bg-ink px-3 py-1.5 text-sm text-white">Chạy thử (Worker)</button>
         <button type="button" onClick={() => setBlocks(samplePidBlocks('banhDa', { Kp: 5, Ki: 0, Kd: 0.5 }))}
           className="rounded-md border border-line px-3 py-1.5 text-sm">Giả lập đồng đội sửa khối</button>
+        <label className="flex items-center gap-1 text-xs">
+          <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> chỉ đọc
+        </label>
         <span className="text-xs text-ink-soft" data-testid="changes">onChange: {changes}</span>
       </div>
       <div className="min-h-0 flex-1">
         {mode === 'blocks' && (
-          <BlocklyEditor partNames={PARTS} value={blocks} onReady={(ws) => { (window as unknown as { __ws: unknown }).__ws = ws; }} onChange={(json) => { setBlocks(json); setChanges((c) => c + 1); }} />
+          <BlocklyEditor partNames={PARTS} value={blocks} readOnly={readOnly} onReady={(ws) => { (window as unknown as { __ws: unknown }).__ws = ws; }} onChange={(json) => { setBlocks(json); setChanges((c) => c + 1); }} />
         )}
         {mode === 'code' && <CodeEditor value={code} onChange={setCode} partNames={PARTS} error={error} className="h-full" />}
         {mode === 'arduino' && <ArduinoCodeView blocks={blocks} className="h-full" />}

@@ -44,6 +44,16 @@ export function cppIdent(name: string): string {
   return /^[0-9]/.test(ascii) || ascii === '' ? `p_${ascii}` : ascii;
 }
 
+/** Chuỗi C++ an toàn (thoát \ " và xuống dòng). */
+export function cppStr(s: string): string {
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\n')}"`;
+}
+
+/** Tên đưa vào comment một dòng: bỏ xuống dòng. */
+function cmt(s: string): string {
+  return s.replace(/[\r\n]+/g, ' ');
+}
+
 const ALL_PINS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A6', 'A7'];
 const PREFER = {
   pwm: ['5', '6', '3', '11', '10', '9'],
@@ -87,11 +97,12 @@ const PIN_NOTE = '// ← sửa cho đúng dây nối thật';
 function buildModels(input: SketchInput) {
   const pins = new PinAllocator();
   const byName = new Map(input.parts.map((p) => [p.name, p]));
+  // So khớp không phân biệt hoa/thường vì #define dùng tên viết HOA (banhDa và BanhDa → cùng BANHDA)
   const usedIds = new Set<string>();
   const uniqueId = (name: string) => {
     let id = cppIdent(name);
-    while (usedIds.has(id)) id += '_';
-    usedIds.add(id);
+    while (usedIds.has(id.toUpperCase())) id += '_';
+    usedIds.add(id.toUpperCase());
     return id;
   };
 
@@ -206,7 +217,11 @@ void mpuWrite(uint8_t reg, uint8_t v) {
 void mpuRead(int16_t raw[7]) {
   Wire.beginTransmission(MPU_ADDR); Wire.write(0x3B); Wire.endTransmission(false);
   Wire.requestFrom(MPU_ADDR, 14);
-  for (int i = 0; i < 7; i++) raw[i] = (Wire.read() << 8) | Wire.read();
+  for (int i = 0; i < 7; i++) {
+    int hi = Wire.read();   // tách 2 lệnh: thứ tự đánh giá trong một biểu thức C++ không xác định
+    int lo = Wire.read();
+    raw[i] = (int16_t)((hi << 8) | lo);
+  }
 }
 
 void imuBegin() {
@@ -275,42 +290,42 @@ export function buildSketch(input: SketchInput): string {
     for (const m of motors) {
       const U = m.id.toUpperCase();
       if (m.type === 'nidec') {
-        L.push(`// Động cơ "${m.name}": BLDC Nidec 24H (driver tích hợp)`);
+        L.push(`// Động cơ "${cmt(m.name)}": BLDC Nidec 24H (driver tích hợp)`);
         L.push(`#define ${U}_PWM ${m.pwm}   // chân PWM (~) ${PIN_NOTE}`);
         L.push(`#define ${U}_DIR ${m.in1}   // chân chiều quay ${PIN_NOTE}`);
       } else {
-        L.push(`// Động cơ "${m.name}" qua TB6612FNG`);
+        L.push(`// Động cơ "${cmt(m.name)}" qua TB6612FNG`);
         L.push(`#define ${U}_PWM ${m.pwm}   // chân PWM (~) — PWMA/PWMB ${PIN_NOTE}`);
         L.push(`#define ${U}_IN1 ${m.in1}   // AIN1/BIN1 ${PIN_NOTE}`);
         L.push(`#define ${U}_IN2 ${m.in2}   // AIN2/BIN2 ${PIN_NOTE}`);
       }
-      L.push(`#define ${U}_REVERSE false   // ⚠ đổi thành true nếu "${m.name}" quay ngược chiều so với mô phỏng`);
+      L.push(`#define ${U}_REVERSE false   // ⚠ đổi thành true nếu "${cmt(m.name)}" quay ngược chiều so với mô phỏng`);
     }
     for (const s of servos) {
       const U = s.id.toUpperCase();
-      L.push(`// Servo "${s.name}"`);
+      L.push(`// Servo "${cmt(s.name)}"`);
       L.push(`#define ${U}_PIN ${s.pin}   // chân tín hiệu servo ${PIN_NOTE}`);
       L.push(`#define ${U}_CENTER 90   // ⚠ góc servo khi bánh trước thẳng (chỉnh cho đúng)`);
     }
     for (const s of sensors) {
       const U = s.id.toUpperCase();
       if (s.kind === 'ultrasonic') {
-        L.push(`// Cảm biến siêu âm "${s.name}" (HC-SR04)`);
+        L.push(`// Cảm biến siêu âm "${cmt(s.name)}" (HC-SR04)`);
         L.push(`#define ${U}_TRIG ${s.pins[0]}   ${PIN_NOTE}`);
         L.push(`#define ${U}_ECHO ${s.pins[1]}   ${PIN_NOTE}`);
       } else if (s.kind === 'ir_distance') {
-        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${s.name}" Sharp IR — chân analog ${PIN_NOTE}`);
+        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${cmt(s.name)}" Sharp IR — chân analog ${PIN_NOTE}`);
       } else if (s.kind === 'ir_reflect') {
-        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${s.name}" TCRT5000 — chân DO ${PIN_NOTE}`);
+        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${cmt(s.name)}" TCRT5000 — chân DO ${PIN_NOTE}`);
       } else if (s.kind === 'unknown') {
-        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${s.name}" — ⚠ chưa rõ loại cảm biến, tạm đọc analog ${PIN_NOTE}`);
+        L.push(`#define ${U}_PIN ${s.pins[0]}   // "${cmt(s.name)}" — ⚠ chưa rõ loại cảm biến, tạm đọc analog ${PIN_NOTE}`);
       } else if (s.kind === 'tof_laser') {
-        L.push(`// "${s.name}" laser ToF dùng I2C (SDA/SCL chung với IMU). Nhiều cảm biến ToF cần đổi địa chỉ qua chân XSHUT.`);
+        L.push(`// "${cmt(s.name)}" laser ToF dùng I2C (SDA/SCL chung với IMU). Nhiều cảm biến ToF cần đổi địa chỉ qua chân XSHUT.`);
       }
     }
     for (const e of encoders) {
       const U = e.id.toUpperCase();
-      L.push(`// Encoder "${e.name}" — chân kênh A phải hỗ trợ ngắt (Nano/Uno: chân 2 hoặc 3)`);
+      L.push(`// Encoder "${cmt(e.name)}" — chân kênh A phải hỗ trợ ngắt (Nano/Uno: chân 2 hoặc 3)`);
       L.push(`#define ${U}_PIN ${e.pin}   ${PIN_NOTE}`);
       L.push(`#define ${U}_PPR 11   // ⚠ số xung mỗi vòng (nhân tỉ số truyền nếu đo trục sau hộp số)`);
     }
@@ -377,7 +392,7 @@ export function buildSketch(input: SketchInput): string {
     const call = m.type === 'nidec'
       ? `motorNidec(${U}_PWM, ${U}_DIR, v, ${U}_REVERSE);`
       : `motorTB6612(${U}_PWM, ${U}_IN1, ${U}_IN2, v, ${U}_REVERSE);`;
-    L.push(`  ${i ? 'else ' : ''}if (strcmp(name, "${m.name}") == 0) ${call}`);
+    L.push(`  ${i ? 'else ' : ''}if (strcmp(name, ${cppStr(m.name)}) == 0) ${call}`);
   });
   L.push('}', '');
 
@@ -386,7 +401,7 @@ export function buildSketch(input: SketchInput): string {
   for (const s of servos) L.push(`Servo servo_${s.id};`);
   L.push('void servo(const char* name, float deg) {');
   servos.forEach((s, i) => {
-    L.push(`  ${i ? 'else ' : ''}if (strcmp(name, "${s.name}") == 0) servo_${s.id}.write(constrainf(${s.id.toUpperCase()}_CENTER + deg, 0, 180));`);
+    L.push(`  ${i ? 'else ' : ''}if (strcmp(name, ${cppStr(s.name)}) == 0) servo_${s.id}.write(constrainf(${s.id.toUpperCase()}_CENTER + deg, 0, 180));`);
   });
   L.push('}', '');
 
@@ -432,7 +447,7 @@ export function buildSketch(input: SketchInput): string {
     }
   }
   L.push('float read(const char* name) {');
-  sensors.forEach((s, i) => L.push(`  ${i ? 'else ' : ''}if (strcmp(name, "${s.name}") == 0) return read_${s.id}();`));
+  sensors.forEach((s, i) => L.push(`  ${i ? 'else ' : ''}if (strcmp(name, ${cppStr(s.name)}) == 0) return read_${s.id}();`));
   L.push('  return 0;', '}', '');
 
   // ----- encoder
@@ -458,7 +473,7 @@ export function buildSketch(input: SketchInput): string {
     );
   }
   L.push('float encoder(const char* name) {');
-  encoders.forEach((e, i) => L.push(`  ${i ? 'else ' : ''}if (strcmp(name, "${e.name}") == 0) return encoder_${e.id}();`));
+  encoders.forEach((e, i) => L.push(`  ${i ? 'else ' : ''}if (strcmp(name, ${cppStr(e.name)}) == 0) return encoder_${e.id}();`));
   L.push('  return 0;', '}', '');
 
   // ----- biến và hàm của thí sinh
@@ -487,8 +502,8 @@ export function buildSketch(input: SketchInput): string {
     if (s.kind === 'ultrasonic') setupHw.push(`pinMode(${U}_TRIG, OUTPUT);`, `pinMode(${U}_ECHO, INPUT);`);
     else if (s.kind === 'ir_reflect') setupHw.push(`pinMode(${U}_PIN, INPUT);`);
     else if (s.kind === 'tof_laser' && s.itemId === 'vl53l1x')
-      setupHw.push(`tof_${s.id}.setTimeout(100);`, `if (!tof_${s.id}.init()) Serial.println(F("Khong thay VL53L1X ${s.name}"));`, `tof_${s.id}.startContinuous(20);`);
-    else if (s.kind === 'tof_laser') setupHw.push(`if (!tof_${s.id}.begin()) Serial.println(F("Khong thay VL53L0X ${s.name}"));`);
+      setupHw.push(`tof_${s.id}.setTimeout(100);`, `if (!tof_${s.id}.init()) Serial.println(F(${cppStr(`Khong thay VL53L1X ${s.name}`)}));`, `tof_${s.id}.startContinuous(20);`);
+    else if (s.kind === 'tof_laser') setupHw.push(`if (!tof_${s.id}.begin()) Serial.println(F(${cppStr(`Khong thay VL53L0X ${s.name}`)}));`);
   }
   for (const e of encoders) {
     const U = e.id.toUpperCase();

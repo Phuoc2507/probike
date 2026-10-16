@@ -28,6 +28,12 @@ function defaultCreateWorker(): WorkerLike {
   return new Worker(new URL('./controller.worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike;
 }
 
+function makeNonce(): string {
+  const a = new Uint32Array(4);
+  globalThis.crypto.getRandomValues(a);
+  return Array.from(a, (x) => x.toString(16)).join('');
+}
+
 interface Pending {
   resolve: (msg: FromWorker) => void;
   reject: (e: Error) => void;
@@ -43,6 +49,7 @@ export class WorkerControllerRuntime implements ControllerRuntime {
   private plots: PlotPoint[] = [];
   private params: Record<string, number>;
   private dead: ControllerError | null = null;
+  private nonce = '';
 
   constructor(options: WorkerRuntimeOptions = {}) {
     this.options = options;
@@ -57,7 +64,7 @@ export class WorkerControllerRuntime implements ControllerRuntime {
       maxLogsPerTick: o.maxLogsPerTick, maxPlotsPerTick: o.maxPlotsPerTick,
     };
     const msg = await this.request(
-      { type: 'load', id: this.nextId++, source, options: { ...coreOpts, params: this.params } },
+      { type: 'load', id: this.nextId++, nonce: this.nonce, source, options: { ...coreOpts, params: this.params } },
       this.options.loadTimeoutMs ?? 3000,
       'Phần khởi động chạy quá lâu, đã dừng (vòng lặp vô hạn?)',
     ).catch((e: Error) => e);
@@ -82,7 +89,7 @@ export class WorkerControllerRuntime implements ControllerRuntime {
       err.message = msg.error.message;
       throw err;
     }
-    return msg.cmd ?? {};
+    return this.sanitize(msg.cmd ?? {});
   }
 
   /** Cập nhật tham số cho param(name, macDinh) (thanh trượt Kp/Ki/Kd) mà không cần nạp lại code. */
@@ -109,6 +116,17 @@ export class WorkerControllerRuntime implements ControllerRuntime {
 
   // ------------------------------------------------------------ nội bộ
 
+  /** Kiểm lại lệnh ở luồng chính (phòng Worker bị can thiệp): chỉ tên hợp lệ, số hữu hạn. */
+  private sanitize(cmd: ActuatorCommand): ActuatorCommand {
+    const allowed = this.options.actuators ? new Set(this.options.actuators) : null;
+    const out: ActuatorCommand = {};
+    for (const [k, v] of Object.entries(cmd)) {
+      if (allowed && !allowed.has(k)) continue;
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+    }
+    return out;
+  }
+
   private collect(msg: FromWorker): void {
     if (msg.logs.length) this.logs.push(...msg.logs);
     if (msg.plots.length) this.plots.push(...msg.plots);
@@ -119,8 +137,10 @@ export class WorkerControllerRuntime implements ControllerRuntime {
   private restartWorker(): void {
     this.killWorker(new ControllerError('Đã nạp lại code'));
     this.dead = null;
+    this.nonce = makeNonce();
     const w = (this.options.createWorker ?? defaultCreateWorker)();
     w.addEventListener('message', (ev: MessageEvent<FromWorker>) => {
+      if (!ev.data || ev.data.nonce !== this.nonce) return; // tin không do runtime gửi
       const p = this.pending.get(ev.data.id);
       if (!p) return;
       clearTimeout(p.timer);

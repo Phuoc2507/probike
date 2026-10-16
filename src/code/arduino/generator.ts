@@ -64,11 +64,21 @@ export class ArduinoGenerator extends JavascriptGenerator {
         if (id) this.pidVarIds.add(id);
       }
     }
-    // Khai báo biến theo kiểu C++: PID cho biến bộ PID, còn lại float
+    // Biến được gán khối chữ → String (float x = "…" không biên dịch được)
+    const stringVarIds = new Set<string>();
+    for (const b of ws.getAllBlocks(false)) {
+      if (b.type !== 'variables_set') continue;
+      const target = b.getInputTargetBlock('VALUE');
+      if (target && (target.type === 'text' || target.outputConnection?.getCheck()?.includes('String'))) {
+        stringVarIds.add(b.getFieldValue('VAR'));
+      }
+    }
+    // Khai báo biến theo kiểu C++: PID cho biến bộ PID, String cho biến chữ, còn lại float
     const decls: string[] = [];
     for (const v of Blockly.Variables.allUsedVarModels(ws)) {
-      const name = this.getVariableName(v.getId());
-      decls.push(this.pidVarIds.has(v.getId()) ? `PID ${name};` : `float ${name} = 0;`);
+      const id = v.getId();
+      const name = this.getVariableName(id);
+      decls.push(this.pidVarIds.has(id) ? `PID ${name};` : stringVarIds.has(id) ? `String ${name} = "";` : `float ${name} = 0;`);
     }
     if (decls.length) this.definitions_['variables'] = decls.join('\n');
     else delete this.definitions_['variables'];

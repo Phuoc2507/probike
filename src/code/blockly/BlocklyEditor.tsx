@@ -4,7 +4,7 @@
 import { useEffect, useRef } from 'react';
 import type { VehicleDesign } from '@/shared/types';
 import { Blockly, setupBlockly, workspaceToJs } from './blocks';
-import { partOptionsFromDesign, setPartOptions } from './parts';
+import { partOptionsFromDesign, partOptionsFromNames, setWorkspacePartOptions } from './parts';
 import { TOOLBOX } from './toolbox';
 
 export interface BlocklyChangeInfo {
@@ -41,9 +41,13 @@ export default function BlocklyEditor({ partNames, design, value, onChange, read
   const valueRef = useRef(value);
   valueRef.current = value;
 
-  // Danh sách tên linh kiện cho dropdown
+  const partOpts = design ? partOptionsFromDesign(design) : partOptionsFromNames(partNames);
+  const partOptsRef = useRef(partOpts);
+  partOptsRef.current = partOpts;
+
+  // Danh sách tên linh kiện cho dropdown — gắn theo từng workspace (nhiều editor không giẫm lên nhau)
   useEffect(() => {
-    setPartOptions(design ? partOptionsFromDesign(design) : partNames);
+    if (wsRef.current) setWorkspacePartOptions(wsRef.current, partOptsRef.current);
   }, [design, partNames]);
 
   // Tạo workspace một lần
@@ -51,7 +55,6 @@ export default function BlocklyEditor({ partNames, design, value, onChange, read
     const host = hostRef.current;
     if (!host) return;
     setupBlockly();
-    setPartOptions(design ? partOptionsFromDesign(design) : partNames);
     const ws = Blockly.inject(host, {
       toolbox: TOOLBOX,
       renderer: 'zelos',
@@ -62,12 +65,16 @@ export default function BlocklyEditor({ partNames, design, value, onChange, read
       move: { scrollbars: true, drag: true, wheel: false },
     });
     wsRef.current = ws;
+    setWorkspacePartOptions(ws, partOptsRef.current);
+    lastJsonRef.current = ''; // workspace mới luôn trống → phải nạp lại value, không được coi là đã có
     applyExternal(ws, valueRef.current, lastJsonRef);
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     const emit = () => {
       timer = null;
       if (ws.isDragging()) { timer = setTimeout(emit, 50); return; }
+      // Nạp dữ liệu đội bị lỗi → không phát, tránh ghi đè dữ liệu cả đội bằng workspace dở dang
+      if (loadFailed.has(ws)) return;
       const json = Blockly.serialization.workspaces.save(ws);
       const str = JSON.stringify(json);
       if (str === lastJsonRef.current) return;
@@ -91,6 +98,8 @@ export default function BlocklyEditor({ partNames, design, value, onChange, read
       ws.removeChangeListener(listener);
       ws.dispose();
       wsRef.current = null;
+      // Quan trọng: workspace sau (đổi readOnly, StrictMode mount lại) bắt đầu trống, phải nạp lại value
+      lastJsonRef.current = '';
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly]);
@@ -113,6 +122,8 @@ export default function BlocklyEditor({ partNames, design, value, onChange, read
 
 // Chuỗi JSON nhận từ ngoài lần gần nhất (có thể khác định dạng save()) — tránh nạp lại cùng nội dung.
 const lastIncoming = new WeakMap<Blockly.WorkspaceSvg, string>();
+// Workspace nạp dữ liệu ngoài bị lỗi: không phát onChange cho tới khi nạp lại thành công.
+const loadFailed = new WeakSet<Blockly.WorkspaceSvg>();
 
 /** Nạp JSON vào workspace với sự kiện tắt → không phát onChange. Bỏ qua nếu trùng nội dung hiện có. */
 function applyExternal(ws: Blockly.WorkspaceSvg, value: object | null, lastJsonRef: { current: string }): void {
@@ -123,8 +134,11 @@ function applyExternal(ws: Blockly.WorkspaceSvg, value: object | null, lastJsonR
   try {
     if (value) Blockly.serialization.workspaces.load(value, ws, { recordUndo: false });
     else ws.clear();
+    loadFailed.delete(ws);
   } catch (e) {
-    console.error('Không nạp được workspace Blockly', e);
+    loadFailed.add(ws);
+    lastIncoming.delete(ws);
+    console.error('Không nạp được workspace Blockly — tạm ngừng đồng bộ để không ghi đè dữ liệu đội', e);
   } finally {
     Blockly.Events.enable();
   }

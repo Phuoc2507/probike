@@ -28,10 +28,13 @@ export class FieldPart extends Blockly.FieldDropdown {
   readonly kind: PartKind;
 
   constructor(kind: PartKind = 'all') {
+    // Lúc super() chạy chưa có this → dùng danh sách chung; sau đó tra theo workspace của khối
+    let self: FieldPart | null = null;
     super(() => {
-      const names = partNamesFor(kind);
+      const names = partNamesFor(kind, self?.getSourceBlock()?.workspace);
       return names.length ? names.map((n) => [n, n] as [string, string]) : [[PLACEHOLDER, '']];
     });
+    self = this;
     this.kind = kind;
   }
 

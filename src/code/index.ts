@@ -20,7 +20,7 @@ export type { PIDLike, PIDInstance } from './runtime/pid';
 export { default as BlocklyEditor } from './blockly/BlocklyEditor';
 export type { BlocklyEditorProps, BlocklyChangeInfo } from './blockly/BlocklyEditor';
 export { setupBlockly, blocksJsonToJs, workspaceToJs, PROBIKE_BLOCK_TYPES, FieldPart } from './blockly/blocks';
-export { setPartOptions, partOptionsFromDesign, partOptionsFromNames } from './blockly/parts';
+export { setPartOptions, setWorkspacePartOptions, partOptionsFromDesign, partOptionsFromNames } from './blockly/parts';
 export type { PartOptions, PartKind } from './blockly/parts';
 export { TOOLBOX, SUPPORTED_STANDARD_BLOCKS } from './blockly/toolbox';
 

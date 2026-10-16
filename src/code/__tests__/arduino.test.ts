@@ -152,6 +152,89 @@ describe('Xuất Arduino C++', () => {
     expect(balanced(code)).toBe(true);
   });
 
+  describe('Dấu IMU trong code C++ sinh ra (chạy thử imuUpdate bằng JS)', () => {
+    // Lấy nguyên thân hàm imuUpdate từ sketch, đổi vài cú pháp C++ → JS rồi chạy với số đo tính tay.
+    const code = blocksJsonToArduino(samplePidBlocks('banhDa'));
+    const start = code.indexOf('void imuUpdate(float dt) {');
+    const end = code.indexOf('\n}\n', start);
+    const body = code
+      .slice(start + 'void imuUpdate(float dt) {'.length, end)
+      .replace(/^\s*int16_t raw\[7\];\s*$/m, '')
+      .replace(/^\s*mpuRead\(raw\);\s*$/m, '')
+      .replace(/const float /g, 'const ')
+      .replace(/\bfloat /g, 'let ');
+    const update = new Function('imu', 'gyroBias', 'raw', 'dt', 'atan2', 'RAD_TO_DEG', body) as (
+      imu: Record<string, number>, bias: number[], raw: number[], dt: number, atan2: typeof Math.atan2, r2d: number) => void;
+
+    const G = 9.81;
+    const D2R = Math.PI / 180;
+    /** Số đọc thô của chip gắn chuẩn (X chip về trước, Y chip sang trái, Z chip lên). */
+    function chipRaw(acc: [number, number, number], gyroDegS: [number, number, number]): number[] {
+      return [...acc.map((a) => (a / G) * 16384), 0, ...gyroDegS.map((w) => w * 65.5)];
+    }
+
+    it('nghiêng PHẢI θ>0 đang tăng: accRoll, gyroX và roll đều dương', () => {
+      const theta = 10 * D2R;
+      // Nghiêng phải: cạnh trái (trục Y chip) nhô lên → gia tốc kế thấy +g·sinθ theo Y chip;
+      // quay quanh +X chip (trái lên, đỉnh sang phải) → gyro X chip dương.
+      const raw = chipRaw([0, G * Math.sin(theta), G * Math.cos(theta)], [20, 0, 0]);
+      const imu: Record<string, number> = { r: 0, p: 0, y: 0 };
+      update(imu, [0, 0, 0], raw, 0.01, Math.atan2, 180 / Math.PI);
+      expect(imu.gx).toBeGreaterThan(0);
+      expect(Math.atan2(-imu.az, imu.ay) / D2R).toBeCloseTo(10, 3);
+      expect(imu.r).toBeGreaterThan(0);
+      for (let i = 0; i < 2000; i++) update(imu, [0, 0, 0], chipRaw([0, G * Math.sin(theta), G * Math.cos(theta)], [0, 0, 0]), 0.01, Math.atan2, 180 / Math.PI);
+      expect(imu.r).toBeCloseTo(10, 1); // bộ lọc bù hội tụ về đúng góc, đúng dấu
+    });
+
+    it('ngóc đầu lên φ>0: accPitch, gyroZ và pitch đều dương; rẽ trái: gyroY dương', () => {
+      const phi = 8 * D2R;
+      // Ngóc đầu: quay quanh −Y chip (trục trái) → gyro Y chip âm; gia tốc kế thấy +g·sinφ theo X chip.
+      const raw = chipRaw([G * Math.sin(phi), 0, G * Math.cos(phi)], [0, -15, 30]);
+      const imu: Record<string, number> = { r: 0, p: 0, y: 0 };
+      update(imu, [0, 0, 0], raw, 0.01, Math.atan2, 180 / Math.PI);
+      expect(imu.gz).toBeGreaterThan(0);
+      expect(imu.p).toBeGreaterThan(0);
+      expect(imu.gy).toBeCloseTo(30, 3); // quay quanh Z chip (lên) dương = rẽ trái = yaw dương
+      expect(imu.y).toBeGreaterThan(0);
+      for (let i = 0; i < 2000; i++) update(imu, [0, 0, 0], chipRaw([G * Math.sin(phi), 0, G * Math.cos(phi)], [0, 0, 0]), 0.01, Math.atan2, 180 / Math.PI);
+      expect(imu.p).toBeCloseTo(8, 1);
+    });
+  });
+
+  it('biến nhận khối chữ khai báo String; tên linh kiện có dấu " được thoát; tên khác hoa/thường không trùng #define', () => {
+    const code = blocksJsonToArduino({
+      blocks: {
+        languageVersion: 0,
+        blocks: [{
+          type: 'probike_loop',
+          inputs: {
+            DO: {
+              block: {
+                type: 'variables_set', fields: { VAR: { id: 'vs' } },
+                inputs: { VALUE: { block: { type: 'text', fields: { TEXT: 'xin chào' } } } },
+                next: {
+                  block: {
+                    type: 'probike_motor', fields: { PART: 'dong"co' },
+                    next: { block: { type: 'probike_motor', fields: { PART: 'BanhDa' }, next: { block: { type: 'probike_motor', fields: { PART: 'banhDa' } } } } },
+                  },
+                },
+              },
+            },
+          },
+        }],
+      },
+      variables: [{ name: 'loiChao', id: 'vs' }],
+    });
+    expect(code).toContain('String loiChao = "";');
+    expect(code).toContain('loiChao = "xin chào";');
+    expect(code).toContain('strcmp(name, "dong\\"co")');
+    expect(code).toContain('#define BANHDA_PWM');
+    expect(code).toContain('#define BANHDA__PWM');
+    expect(code).not.toMatch(/Wire\.read\(\) << 8\) \| Wire\.read\(\)/);
+    expect(balanced(code)).toBe(true);
+  });
+
   it('cppIdent bỏ dấu tiếng Việt', () => {
     expect(cppIdent('lái')).toBe('lai');
     expect(cppIdent('Động cơ sau')).toBe('Dong_co_sau');

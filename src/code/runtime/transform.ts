@@ -97,6 +97,33 @@ export function tokenize(src: string): Token[] {
   return toks;
 }
 
+const FORBIDDEN_WORDS: Record<string, string> = {
+  eval: 'Không được dùng eval trong code xe',
+  import: 'Không được dùng import trong code xe (không tải thêm code từ ngoài)',
+  async: 'Không dùng async/await — code xe chạy tuần tự trong loop()',
+  await: 'Không dùng async/await — code xe chạy tuần tự trong loop()',
+};
+
+/**
+ * Tìm cú pháp bị cấm: eval, import(...) động, async/await (tạo microtask chạy ngoài watchdog)
+ * và tên bắt đầu bằng __pb (dành riêng cho runtime, vd __pb_guard của watchdog).
+ */
+export function findForbiddenSyntax(src: string): { message: string; line: number } | null {
+  const toks = tokenize(src).filter((t) => t.type !== 'ws' && t.type !== 'comment');
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.type !== 'word') continue;
+    const prev = toks[k - 1];
+    if (prev && prev.type === 'punct' && prev.value === '.' && !(toks[k - 2]?.value === '.')) continue; // obj.eval là thuộc tính
+    const next = toks[k + 1];
+    if (next?.value === ':' && (prev?.value === '{' || prev?.value === ',')) continue; // { eval: 1 } là khoá đối tượng
+    let message = FORBIDDEN_WORDS[t.value];
+    if (!message && t.value.startsWith('__pb')) message = `Tên "${t.value}" dành riêng cho hệ thống, hãy đặt tên khác`;
+    if (message) return { message, line: src.slice(0, t.start).split('\n').length };
+  }
+  return null;
+}
+
 /** Trả về source đã chèn guard vào các vòng lặp. */
 export function instrumentLoops(src: string, guard = GUARD_NAME): string {
   const all = tokenize(src);

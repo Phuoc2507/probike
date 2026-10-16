@@ -4,7 +4,7 @@
 import type { ActuatorCommand, ControllerLog, PlotPoint, SensorFrame } from '@/shared/types';
 import { ApiError, ControllerError, WatchdogError, translateMessage } from './errors';
 import { makePIDClass } from './pid';
-import { GUARD_NAME, instrumentLoops } from './transform';
+import { GUARD_NAME, findForbiddenSyntax, instrumentLoops } from './transform';
 
 export interface ControllerCoreOptions {
   /** Thời gian tối đa cho mỗi lần loop(), ms. Mặc định 50. */
@@ -31,12 +31,23 @@ const SOURCE_URL = 'probike-xe.js';
 const STACK_RE_URL = /probike-xe\.js:(\d+):(\d+)/;
 const STACK_RE_ANON = /<anonymous>:(\d+):(\d+)/;
 
-/** Tên toàn cục bị chặn (che bằng tham số của hàm bọc). */
+// Chụp sẵn lúc nạp module: code thí sinh (kể cả khi lách ra phạm vi toàn cục) có sửa performance.now,
+// Math.min/max... thì đồng hồ watchdog và phép kẹp của lõi vẫn dùng bản gốc.
+const perfNow: () => number = performance.now.bind(performance);
+const isFiniteNum = Number.isFinite;
+const isIntegerNum = Number.isInteger;
+/** Bản sao đóng băng của Math — vừa dùng nội bộ, vừa đưa cho code thí sinh (gán Math.min = … sẽ lỗi). */
+const M: Math = Object.freeze(
+  Object.fromEntries(Object.getOwnPropertyNames(Math).map((k) => [k, (Math as unknown as Record<string, unknown>)[k]])),
+) as unknown as Math;
+
+/** Tên toàn cục bị chặn (che bằng khai báo ở hàm bọc). */
 export const BLOCKED_GLOBALS = [
   'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'Worker', 'SharedWorker',
   'BroadcastChannel', 'indexedDB', 'caches', 'navigator', 'location', 'postMessage', 'close',
   'window', 'document', 'self', 'globalThis', 'global', 'process', 'require', 'Function',
-  'setTimeout', 'setInterval', 'queueMicrotask', 'requestAnimationFrame', 'localStorage', 'sessionStorage',
+  'setTimeout', 'setInterval', 'setImmediate', 'queueMicrotask', 'requestAnimationFrame', 'localStorage', 'sessionStorage',
+  'performance', 'Promise', 'WebAssembly', 'Atomics', 'SharedArrayBuffer',
 ] as const;
 
 const NETWORK = new Set(['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts']);
@@ -45,8 +56,9 @@ const DOM = new Set(['window', 'document', 'self', 'globalThis', 'global', 'navi
 function blockedMessage(name: string): string {
   if (NETWORK.has(name)) return `Không được dùng mạng (${name}) trong code xe`;
   if (DOM.has(name)) return `Không được truy cập trình duyệt (${name}) trong code xe`;
-  if (name === 'setTimeout' || name === 'setInterval' || name === 'queueMicrotask')
+  if (name === 'setTimeout' || name === 'setInterval' || name === 'setImmediate' || name === 'queueMicrotask' || name === 'Promise')
     return `Không dùng ${name} — mọi việc hãy làm trong loop(), dùng millis() để đếm thời gian`;
+  if (name === 'performance') return 'Không dùng performance — dùng millis() để đếm thời gian';
   return `Không được dùng "${name}" trong code xe`;
 }
 
@@ -126,7 +138,7 @@ export function findSyntaxErrorLine(src: string): number | undefined {
 }
 
 function fmtValue(v: unknown): string {
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(Math.round(v * 10000) / 10000);
+  if (typeof v === 'number') return isIntegerNum(v) ? String(v) : String(M.round(v * 10000) / 10000);
   if (typeof v === 'string') return v;
   if (v === undefined) return 'undefined';
   try { return JSON.stringify(v); } catch { return String(v); }
@@ -135,7 +147,7 @@ function fmtValue(v: unknown): string {
 function toNumber(v: unknown, what: string): number {
   const x = typeof v === 'boolean' ? (v ? 1 : 0) : Number(v);
   if (typeof v === 'string' && v.trim() === '') throw new ApiError(`${what}: cần một số, nhận được chuỗi rỗng`);
-  if (!Number.isFinite(x)) throw new ApiError(`${what}: cần một số hợp lệ, nhận được ${fmtValue(v)}`);
+  if (!isFiniteNum(x)) throw new ApiError(`${what}: cần một số hợp lệ, nhận được ${fmtValue(v)}`);
   return x;
 }
 
@@ -171,7 +183,7 @@ export class ControllerCore {
       defaultDt: options.defaultDt ?? 0.01,
       maxLogsPerTick: options.maxLogsPerTick ?? 20,
       maxPlotsPerTick: options.maxPlotsPerTick ?? 50,
-      now: options.now ?? (() => performance.now()),
+      now: options.now ?? perfNow,
     };
     this.actuators = options.actuators ? new Set(options.actuators) : null;
     this.params = { ...(options.params ?? {}) };
@@ -207,6 +219,14 @@ export class ControllerCore {
       return { ok: false, error: err.message, line };
     }
 
+    const forbidden = findForbiddenSyntax(source);
+    if (forbidden) {
+      const err = new ControllerError(forbidden.message, forbidden.line);
+      this.failed = err;
+      this.pushLog('error', err.message);
+      return { ok: false, error: err.message, line: forbidden.line };
+    }
+
     const sandbox = this.buildSandbox();
     const names = Object.keys(sandbox);
     const instrumented = instrumentLoops(source);
@@ -237,7 +257,7 @@ export class ControllerCore {
     if (this.failed) throw this.failed;
     if (!this.loaded || !this.loopFn) throw new ControllerError('Chưa nạp code (gọi load trước)');
     this.frame = frame;
-    this.curDt = this.prevT === null ? this.opts.defaultDt : Math.max(0, frame.t - this.prevT);
+    this.curDt = this.prevT === null ? this.opts.defaultDt : M.max(0, frame.t - this.prevT);
     this.prevT = frame.t;
     this.logsThisTick = 0;
     this.plotsThisTick = 0;
@@ -382,7 +402,7 @@ export class ControllerCore {
     Object.assign(sb, {
       imu,
       PID: makePIDClass(),
-      millis: () => Math.round(core.frame.t * 1000),
+      millis: () => M.round(core.frame.t * 1000),
       dt: () => core.curDt,
       read: (name: unknown) => core.readValue('read', name),
       encoder: (name: unknown) => {
@@ -392,7 +412,7 @@ export class ControllerCore {
       motor: (name: unknown, value: unknown) => {
         const n = core.checkActuator('motor', name);
         const v = toNumber(value, `motor("${n}", ...)`);
-        core.cmd[n] = Math.max(-1, Math.min(1, v));
+        core.cmd[n] = M.max(-1, M.min(1, v));
       },
       servo: (name: unknown, deg: unknown) => {
         const n = core.checkActuator('servo', name);
@@ -413,27 +433,28 @@ export class ControllerCore {
         if (core.plotsThisTick >= core.opts.maxPlotsPerTick) return;
         core.plotsThisTick++;
         const v = Number(value);
-        if (!Number.isFinite(v)) return;
+        if (!isFiniteNum(v)) return;
         if (core.plots.length >= 20000) core.plots.shift();
         core.plots.push({ t: core.frame.t, label: String(label), value: v });
       },
       param: (name: unknown, fallback: unknown) => {
         const v = core.params[String(name)];
-        return typeof v === 'number' && Number.isFinite(v) ? v : Number(fallback ?? 0);
+        return typeof v === 'number' && isFiniteNum(v) ? v : Number(fallback ?? 0);
       },
-      constrain: (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi),
+      constrain: (x: number, lo: number, hi: number) => M.min(M.max(x, lo), hi),
       map: (x: number, inMin: number, inMax: number, outMin: number, outMax: number) =>
         inMax === inMin ? outMin : ((x - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin,
-      abs: Math.abs,
-      min: Math.min,
-      max: Math.max,
-      sqrt: Math.sqrt,
-      pow: Math.pow,
-      sin: Math.sin,
-      cos: Math.cos,
-      tan: Math.tan,
-      atan2: Math.atan2,
-      PI: Math.PI,
+      abs: M.abs,
+      min: M.min,
+      max: M.max,
+      sqrt: M.sqrt,
+      pow: M.pow,
+      sin: M.sin,
+      cos: M.cos,
+      tan: M.tan,
+      atan2: M.atan2,
+      PI: M.PI,
+      Math: M,
     });
     return sb;
   }

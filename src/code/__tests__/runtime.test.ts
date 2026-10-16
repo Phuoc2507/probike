@@ -6,6 +6,7 @@ import { instrumentLoops } from '../runtime/transform';
 import { LocalControllerRuntime } from '../runtime/local-runtime';
 import { WorkerControllerRuntime, type WorkerLike } from '../runtime/worker-runtime';
 import type { FromWorker, ToWorker } from '../runtime/protocol';
+import { createWorkerHandler } from '../runtime/worker-handler';
 
 function frame(t: number, roll = 0, values: Record<string, number> = {}): SensorFrame {
   return { t, values, imu: { roll, pitch: 0, yaw: 0, gyro: [1, 2, 3], acc: [0, 9.8, 0] } };
@@ -248,10 +249,14 @@ describe('Runtime theo hợp đồng ControllerRuntime', () => {
     rt.dispose();
   });
 
-  /** Worker giả chạy controller.worker trong cùng luồng — kiểm tra giao thức message. */
-  function fakeWorker(opts: { hang?: boolean } = {}): WorkerLike & { terminated: boolean } {
+  /**
+   * Worker giả: dùng đúng createWorkerHandler của controller.worker (không chép lại logic).
+   * forge: gửi kèm một tin giả mạo (không có nonce) trước tin thật — giả lập code thí sinh tự postMessage.
+   */
+  function fakeWorker(opts: { hang?: boolean; forge?: boolean } = {}): WorkerLike & { terminated: boolean } {
     let listener: ((ev: MessageEvent<FromWorker>) => void) | null = null;
-    let core: ControllerCore | null = null;
+    const deliver = (data: unknown) => listener?.({ data } as MessageEvent<FromWorker>);
+    const handle = createWorkerHandler((out) => setTimeout(() => deliver(out), 0));
     const w = {
       terminated: false,
       addEventListener(type: string, fn: (ev: MessageEvent<FromWorker>) => void) {
@@ -260,26 +265,22 @@ describe('Runtime theo hợp đồng ControllerRuntime', () => {
       terminate() { w.terminated = true; },
       postMessage(msg: ToWorker) {
         if (opts.hang && msg.type === 'tick') return; // giả lập treo cứng
-        setTimeout(() => {
-          let out: FromWorker | null = null;
-          if (msg.type === 'load') {
-            core = new ControllerCore(msg.options);
-            const r = core.load(msg.source);
-            out = { type: 'loaded', id: msg.id, ok: r.ok, error: r.ok ? undefined : { message: r.error, detail: r.error, line: r.line }, logs: core.drainLogs(), plots: [] };
-          } else if (msg.type === 'tick' && core) {
-            try {
-              out = { type: 'ticked', id: msg.id, cmd: core.tick(msg.frame), logs: core.drainLogs(), plots: core.drainPlots() };
-            } catch (e) {
-              const err = e as Error & { detail: string; line?: number };
-              out = { type: 'ticked', id: msg.id, error: { message: err.message, detail: err.detail, line: err.line }, logs: [], plots: [] };
-            }
-          } else if (msg.type === 'params') core?.setParams(msg.params);
-          if (out) listener?.({ data: out } as MessageEvent<FromWorker>);
-        }, 0);
+        if (opts.forge && msg.type === 'tick') {
+          deliver({ type: 'ticked', id: msg.id, cmd: { m: 99, laNguoiLa: 1 }, logs: [], plots: [] });
+          deliver({ type: 'ticked', id: msg.id, nonce: 'doan-bua', cmd: { m: 99 }, logs: [], plots: [] });
+        }
+        setTimeout(() => handle(msg), 0);
       },
     };
     return w as WorkerLike & { terminated: boolean };
   }
+
+  it('WorkerControllerRuntime: bỏ tin giả mạo không có nonce đúng', async () => {
+    const rt = new WorkerControllerRuntime({ createWorker: () => fakeWorker({ forge: true }), actuators: ['m'] });
+    await rt.load(`function loop() { motor("m", 0.2); }`);
+    expect(await rt.tick(frame(0))).toEqual({ m: 0.2 });
+    rt.dispose();
+  });
 
   it('WorkerControllerRuntime: load, tick, params, lỗi', async () => {
     const rt = new WorkerControllerRuntime({ createWorker: () => fakeWorker() });

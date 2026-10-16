@@ -23,7 +23,10 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   /** Tên linh kiện để gợi ý trong read("…"), motor("…")... */
   partNames: string[];
-  /** Lỗi hiện tại: dòng lỗi được tô đỏ, thông điệp hiện dưới editor. */
+  /**
+   * Lỗi hiện tại: dòng lỗi được tô đỏ, thông điệp hiện dưới editor. Mỗi lần chạy lại hãy truyền object MỚI
+   * (kể cả khi lỗi y hệt) để editor tô lại sau khi người dùng đã sửa code.
+   */
   error?: CodeError | null;
   readOnly?: boolean;
   height?: string;
@@ -89,7 +92,9 @@ export default function CodeEditor({
       effects.push(EditorView.scrollIntoView(view.state.doc.line(errorLine).from, { y: 'center' }));
     }
     view.dispatch({ effects });
-  }, [errorLine, error?.message]);
+    // Phụ thuộc vào chính object lỗi: mỗi lần chạy lại tạo object mới → tô lại kể cả khi lỗi y hệt lần trước
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   return (
     <div className={`flex min-h-0 flex-col overflow-hidden rounded-lg border border-line ${className ?? ''}`}>

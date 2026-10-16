@@ -46,7 +46,28 @@ export function getPartOptions(): PartOptions {
 }
 
 /** Tên cho dropdown loại `kind`; nếu loại đó trống thì dùng toàn bộ tên. */
-export function partNamesFor(kind: PartKind): string[] {
-  const list = current[kind];
-  return list.length ? list : current.all;
+export function partNamesFor(kind: PartKind, ws?: object | null): string[] {
+  const opts = (ws && byWorkspace.get(rootWorkspace(ws as WsLike))) || current;
+  const list = opts[kind];
+  return list.length ? list : opts.all;
+}
+
+// Danh sách theo từng workspace (khoá là workspace gốc). Không có thì dùng danh sách chung ở trên.
+const byWorkspace = new WeakMap<object, PartOptions>();
+
+interface WsLike { targetWorkspace?: WsLike | null; options?: { parentWorkspace?: WsLike | null } }
+
+/** Workspace gốc: flyout (khay khối) và workspace con dùng chung danh sách với workspace chính. */
+function rootWorkspace(ws: WsLike): WsLike {
+  let cur = ws;
+  for (let i = 0; i < 5; i++) {
+    const next = cur.targetWorkspace ?? cur.options?.parentWorkspace;
+    if (!next || next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
+export function setWorkspacePartOptions(ws: object, opts: PartOptions | string[]): void {
+  byWorkspace.set(rootWorkspace(ws as WsLike), Array.isArray(opts) ? partOptionsFromNames(opts) : opts);
 }
