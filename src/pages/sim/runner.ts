@@ -93,7 +93,7 @@ export class SimRunner {
       if (this.stopRequested && !e.result()) e.abort(this.stopRequested.reason, this.stopRequested.message);
       this.flush();
       if (this.disposed) break;
-      this.opts.onFrame?.(e.snapshot(), e);
+      safe(() => this.opts.onFrame?.(e.snapshot(), e));
       if (!e.result()) await (realtime ? waitFrame() : yieldToUi());
     }
     if (!e.result()) e.abort('stopped');
@@ -108,9 +108,9 @@ export class SimRunner {
 
   private flush() {
     const plots = this.runtime.drainPlots();
-    if (plots.length) this.opts.onPlots?.(plots);
+    if (plots.length) safe(() => this.opts.onPlots?.(plots));
     const logs = this.runtime.drainLogs();
-    if (logs.length) this.opts.onLogs?.(logs);
+    if (logs.length) safe(() => this.opts.onLogs?.(logs));
   }
 
   setParams(p: Record<string, number>) {
@@ -149,4 +149,13 @@ function waitFrame(): Promise<void> {
     requestAnimationFrame(fin);
     setTimeout(fin, 50);
   });
+}
+
+/** Lỗi trong callback giao diện không làm hỏng lượt chạy (và không bị tính là lỗi code). */
+function safe(fn: () => void) {
+  try {
+    fn();
+  } catch (e) {
+    console.error('[mô phỏng] lỗi callback giao diện', e);
+  }
 }
